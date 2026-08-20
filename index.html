@@ -10,6 +10,8 @@
   --line:#e6e1da; --line2:#f1ede7;
   --accent:#b4532a; --accent-soft:#f7eae3; --accent-dim:#e0bda9;
   --link:#5d7f8f; --bubble:#fff; --danger:#cf2f21;
+  /* one hue per chain, so parallel chains stay readable side by side */
+  --c1:#b4532a; --c2:#3d7d63; --c3:#55689b; --c4:#8d6420; --c5:#8a4470; --c6:#3f7c8c;
   --shadow:0 1px 2px rgba(28,26,24,.06),0 10px 26px rgba(28,26,24,.08);
 }
 @media (prefers-color-scheme:dark){
@@ -18,6 +20,7 @@
     --line:#2c2a30; --line2:#232127;
     --accent:#e08355; --accent-soft:#2f2119; --accent-dim:#6b4632;
     --link:#7fa3b5; --bubble:#1e1d23; --danger:#ff6a55;
+    --c1:#e08355; --c2:#5cb08e; --c3:#8ba0d6; --c4:#cf9a4e; --c5:#c87dac; --c6:#6fb0c2;
     --shadow:0 1px 2px rgba(0,0,0,.45),0 12px 32px rgba(0,0,0,.4);
   }
 }
@@ -121,14 +124,16 @@ main{position:relative;min-height:0}
 .bub{position:absolute;pointer-events:auto;display:flex;flex-direction:column;align-items:center;
   transform:translate(-50%,-50%);width:max-content}
 body.anim .bub{transition:left .4s cubic-bezier(.22,.61,.36,1),top .4s cubic-bezier(.22,.61,.36,1)}
+.bub{--c:var(--accent)}
 .circle{position:relative;min-width:98px;min-height:98px;max-width:196px;border-radius:50%;
-  background:var(--bubble);border:2px solid var(--accent-dim);
+  background:var(--bubble);border:2px solid color-mix(in srgb,var(--c) 42%,transparent);
   display:grid;place-items:center;padding:16px 19px;cursor:grab;
   transition:border-color .12s,box-shadow .12s,background .12s}
-.bub:hover .circle{border-color:var(--accent)}
-.bub.sel .circle{border-color:var(--accent);border-width:2.5px;background:var(--accent-soft);
-  box-shadow:0 0 0 5px color-mix(in srgb,var(--accent) 12%,transparent)}
-.bub.trail .circle{border-color:var(--accent)}
+.bub:hover .circle{border-color:var(--c)}
+.bub.sel .circle{border-color:var(--c);border-width:2.5px;
+  background:color-mix(in srgb,var(--c) 10%,var(--bubble));
+  box-shadow:0 0 0 5px color-mix(in srgb,var(--c) 14%,transparent)}
+.bub.trail .circle{border-color:var(--c)}
 .bub.dim{opacity:.36}
 .txt{outline:0;text-align:center;font-size:13px;line-height:1.4;font-weight:500;
   min-width:34px;word-break:break-word;cursor:text}
@@ -149,8 +154,8 @@ body.anim .bub{transition:left .4s cubic-bezier(.22,.61,.36,1),top .4s cubic-bez
 .tools button:hover{color:var(--accent);border-color:var(--accent)}
 .tools button.rm:hover{color:var(--danger);border-color:var(--danger)}
 
-.branch{fill:none;stroke:var(--accent-dim);stroke-width:1.8}
-.branch.trail{stroke:var(--accent);stroke-width:2.4}
+.branch{fill:none;stroke:color-mix(in srgb,var(--c,var(--accent)) 42%,transparent);stroke-width:1.8}
+.branch.trail{stroke:var(--c,var(--accent));stroke-width:2.4}
 .branch.dim{opacity:.25}
 .xlink{fill:none;stroke:var(--link);stroke-width:1.5;stroke-dasharray:5 4}
 .xlink.dim{opacity:.2}
@@ -182,6 +187,7 @@ body.anim .bub{transition:left .4s cubic-bezier(.22,.61,.36,1),top .4s cubic-bez
       <div class="pop" id="boards"></div>
     </div>
     <div class="bar">
+      <button id="bChain">New chain</button>
       <button id="bArrange">Arrange</button>
       <button id="bFit">Fit</button>
       <button id="bMore">···</button>
@@ -203,6 +209,8 @@ body.anim .bub{transition:left .4s cubic-bezier(.22,.61,.36,1),top .4s cubic-bez
         <h2>Click anywhere to start</h2>
         <p>A bubble appears where you click. Type in it, add a note underneath.
            Click empty space again and the next bubble wires itself to the last one you touched.</p>
+        <p>Hit <b>New chain</b> (or Esc) to drop the thread and start a separate one
+           on the same board. Each chain gets its own colour.</p>
       </div>
       <div id="hud"><span id="hudText"></span><button id="hudCancel">cancel</button></div>
       <div id="zoom">
@@ -246,6 +254,18 @@ const els = {};
 
 const N = id => state.nodes[id];
 const kids = id => state.order.filter(x => N(x).parent === id);
+/* a chain = one root plus everything hanging off it. Each gets its own hue. */
+function rootOf(id){ let c=id,g=0; while(N(c) && N(c).parent && N(N(c).parent) && g++<400) c=N(c).parent; return c; }
+function chainOf(){
+  const seat = {}, out = {}; let k = 0;
+  for(const id of state.order){
+    const r = rootOf(id);
+    if(seat[r] === undefined) seat[r] = k++;
+    out[id] = seat[r];
+  }
+  return out;
+}
+const hue = i => `var(--c${(i%6)+1})`;
 function trailOf(id){ const t=[]; let c=id,g=0; while(c && N(c) && g++<400){ t.unshift(c); c=N(c).parent; } return t; }
 const board = () => store.boards.find(b => b.id === store.current);
 
@@ -320,6 +340,7 @@ function screenToWorld(sx, sy){
   return { x:(sx-r.left-state.view.x)/state.view.k, y:(sy-r.top-state.view.y)/state.view.k };
 }
 function createAt(sx, sy, connect){
+  if(!linking) hudOff();
   const w = screenToWorld(sx, sy);
   const n = { id:uid(), t:"", c:"", parent: connect && N(state.last) ? state.last : null, x:w.x, y:w.y };
   state.nodes[n.id] = n; state.order.push(n.id);
@@ -362,12 +383,14 @@ function draw(){
   applyView();
   $("#empty").style.display = state.order.length ? "none" : "grid";
   const trail = state.sel ? new Set(trailOf(state.sel)) : null;
+  const ch = chainOf();
   for(const id in els) if(!N(id)){ els[id].remove(); delete els[id]; }
   for(const id of state.order){
     const n = N(id);
     let el = els[id];
     if(!el){ el = buildNode(n); els[id] = el; nodesLayer.appendChild(el); }
     el.style.left = n.x+"px"; el.style.top = n.y+"px";
+    el.style.setProperty("--c", hue(ch[id]||0));
     el.className = "bub" + (state.sel===id ? " sel":"")
       + (trail && trail.has(id) && state.sel!==id ? " trail":"")
       + (trail && !trail.has(id) ? " dim":"");
@@ -375,7 +398,7 @@ function draw(){
     if(document.activeElement !== tx && tx.textContent !== n.t) tx.textContent = n.t;
     if(document.activeElement !== cm && cm.textContent !== n.c) cm.textContent = n.c;
   }
-  drawLinks(trail);
+  drawLinks(trail, ch);
 }
 function buildNode(n){
   const el = document.createElement("div");
@@ -417,8 +440,9 @@ function edgePoint(id, ux, uy){
   const t = 1/Math.sqrt((ux/a)**2 + (uy/b)**2 || 1);
   return { x:n.x + ux*t, y:n.y + uy*t };
 }
-function drawLinks(trailSet){
+function drawLinks(trailSet, chMap){
   const trail = trailSet !== undefined ? trailSet : (state.sel ? new Set(trailOf(state.sel)) : null);
+  const ch = chMap || chainOf();
   while(linksLayer.firstChild) linksLayer.removeChild(linksLayer.firstChild);
   for(const id of state.order){
     const n = N(id); if(!n.parent || !N(n.parent)) continue;
@@ -428,7 +452,7 @@ function drawLinks(trailSet){
     const on = trail && trail.has(id) && trail.has(n.parent);
     const my = (s.y+e.y)/2;
     linksLayer.appendChild(mk("path",{ d:`M${s.x},${s.y} C${s.x},${my} ${e.x},${my} ${e.x},${e.y}`,
-      class:"branch"+(on?" trail":"")+(trail&&!on?" dim":"") }));
+      class:"branch"+(on?" trail":"")+(trail&&!on?" dim":""), style:"--c:"+hue(ch[id]||0) }));
   }
   for(const l of state.links){
     const a = N(l.from), b = N(l.to); if(!a || !b) continue;
@@ -548,7 +572,7 @@ function arrange(){
   pushHistNow();
   const W = id => (els[id] ? els[id].offsetWidth : 120);
   const H = id => (els[id] ? els[id].offsetHeight : 120);
-  const GAPX = 44, GAPY = 64;
+  const GAPX = 44, GAPY = 64, CHAINGAP = 170;   // chains need real air, not a hairline
   const rowH = Math.max(...state.order.map(H)) + GAPY;
   const childMap = {}; state.order.forEach(id => childMap[id] = []);
   const roots = [];
@@ -569,7 +593,7 @@ function arrange(){
     target[id] = { x, y: depth*rowH };
     return x;
   }
-  roots.forEach(r => { place(r,0); cursor += GAPX*1.6; });
+  roots.forEach(r => { place(r,0); cursor += CHAINGAP; });
   state.order.forEach(id => { if(!seen.has(id)) place(id,0); });
   const xs = state.order.map(id=>target[id].x), ys = state.order.map(id=>target[id].y);
   const cx = (Math.min(...xs)+Math.max(...xs))/2, cy = (Math.min(...ys)+Math.max(...ys))/2;
@@ -583,6 +607,20 @@ function arrange(){
     else { document.body.classList.remove("anim"); save(); pushHistNow(); } })();
 }
 $("#bArrange").addEventListener("click", e => { e.currentTarget.blur(); arrange(); });
+
+/* ---------- chains ----------
+   Nothing selected means nothing to hang off, so the next bubble you make
+   starts its own chain. That is the whole rule. */
+function newChain(){
+  if(document.activeElement && document.activeElement.isContentEditable){
+    const owner = document.activeElement.closest(".bub");
+    document.activeElement.blur();
+    if(owner) dropIfBlank(owner.dataset.id);
+  }
+  state.sel = null; state.last = null; save(); draw();
+  hud("Click anywhere \u2014 that bubble starts a new chain");
+}
+$("#bChain").addEventListener("click", e => { e.currentTarget.blur(); newChain(); });
 
 /* ---------- board switcher ---------- */
 let renaming = null;
@@ -678,7 +716,7 @@ document.addEventListener("keydown", e => {
   if(mod && (e.key === "z" || e.key === "Z")){ e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
   if(mod && (e.key === "y" || e.key === "Y")){ e.preventDefault(); redo(); return; }
   if(e.target.isContentEditable) return;
-  if(e.key === "Escape"){ if(linking) stopLink(); else if(state.sel){ state.sel = null; save(); draw(); } }
+  if(e.key === "Escape"){ if(linking) stopLink(); else if(state.sel || state.last) newChain(); }
   if((e.key === "Backspace" || e.key === "Delete") && state.sel){ e.preventDefault(); removeNode(state.sel); }
 });
 window.addEventListener("resize", drawLinks);

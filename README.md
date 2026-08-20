@@ -14,9 +14,12 @@ Click anywhere on the canvas. A bubble appears there with the cursor already in
 it — type your question, press `⏎`, type the answer underneath. Click empty space
 again and the next bubble wires itself to the last one you touched.
 
+- **New chain** (or `Esc`) drops the thread, so the next bubble starts a
+  separate chain on the same board. Every chain gets its own colour, and
+  **Arrange** gives each one its own column.
 - **Branch** — click an older bubble first, then click empty space; the new one
-  hangs off *that* one.
-- **Shift-click** empty space for a bubble with no line.
+  hangs off *that* one. Clicking any bubble picks its chain back up.
+- **Shift-click** empty space for a one-off bubble with no line.
 - **⤳** on a selected bubble draws a line to any other bubble — for when two
   branches turn out to be the same idea.
 - **×** deletes. Drag the rim to move it.
