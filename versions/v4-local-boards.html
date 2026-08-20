@@ -1,0 +1,641 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Trace</title>
+<style>
+:root{
+  --bg:#faf9f7; --panel:#fff; --ink:#1b1a18; --muted:#77726c; --faint:#a8a29b;
+  --line:#e6e1da; --line2:#f1ede7;
+  --accent:#b4532a; --accent-soft:#f7eae3; --accent-dim:#e0bda9;
+  --link:#5d7f8f; --bubble:#fff; --danger:#cf2f21;
+  --shadow:0 1px 2px rgba(28,26,24,.06),0 10px 26px rgba(28,26,24,.08);
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#131215; --panel:#1a191d; --ink:#eceae7; --muted:#9b958d; --faint:#6b655e;
+    --line:#2c2a30; --line2:#232127;
+    --accent:#e08355; --accent-soft:#2f2119; --accent-dim:#6b4632;
+    --link:#7fa3b5; --bubble:#1e1d23; --danger:#ff6a55;
+    --shadow:0 1px 2px rgba(0,0,0,.45),0 12px 32px rgba(0,0,0,.4);
+  }
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);overflow:hidden;
+  font:15px/1.5 ui-sans-serif,-apple-system,"SF Pro Text","Segoe UI",Inter,system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+
+#app{display:grid;grid-template-rows:auto 1fr;height:100%}
+header{display:flex;align-items:center;justify-content:space-between;gap:16px;
+  padding:9px 14px;border-bottom:1px solid var(--line);background:var(--panel);z-index:20}
+.left,.bar{display:flex;align-items:center;gap:3px;position:relative}
+.brand{display:flex;align-items:center;gap:8px;margin-right:8px}
+.brand .dots{position:relative;width:18px;height:18px}
+.brand .dots i{position:absolute;border-radius:50%;background:var(--accent);display:block}
+.brand .dots i:nth-child(1){width:8px;height:8px;left:0;top:0}
+.brand .dots i:nth-child(2){width:6px;height:6px;left:10px;top:5px;opacity:.55}
+.brand .dots i:nth-child(3){width:4px;height:4px;left:4px;top:13px;opacity:.3}
+.brand b{font-size:14.5px;font-weight:600;letter-spacing:-.01em}
+.bar button,.left button{padding:6px 11px;border-radius:8px;font-size:13px;color:var(--muted)}
+.bar button:hover,.left button:hover{background:var(--line2);color:var(--ink)}
+#bBoard{color:var(--ink);font-weight:500;display:flex;align-items:center;gap:7px;max-width:280px}
+#bBoard .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#bBoard .car{color:var(--faint);font-size:10px}
+#bBoard:hover{background:var(--line2)}
+
+.pop{position:absolute;top:38px;background:var(--panel);border:1px solid var(--line);
+  border-radius:12px;box-shadow:var(--shadow);padding:5px;min-width:230px;display:none;z-index:30}
+.pop.show{display:block}
+#boards{left:0;max-height:60vh;overflow:auto}
+#menu{right:0;min-width:150px}
+#menu button{display:block;width:100%;text-align:left;padding:7px 11px;border-radius:7px;font-size:13px}
+.brow{display:flex;align-items:center;gap:4px;border-radius:8px;padding:2px}
+.brow:hover{background:var(--line2)}
+.brow .pick{flex:1;text-align:left;padding:7px 9px;border-radius:7px;font-size:13px;color:var(--ink);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:8px}
+.brow.on .pick{color:var(--accent);font-weight:500}
+.brow .ct{font-size:11px;color:var(--faint);font-weight:400}
+.brow .mini{opacity:0;width:24px;height:24px;border-radius:6px;color:var(--faint);
+  display:grid;place-content:center;font-size:12px;flex:0 0 auto}
+.brow:hover .mini{opacity:1}
+.brow .mini:hover{background:var(--line);color:var(--ink)}
+.brow .mini.del:hover{color:var(--danger)}
+.brow input{flex:1;padding:6px 9px;border-radius:7px;border:1px solid var(--accent);
+  background:var(--bg);color:var(--ink);font-size:13px;outline:0;min-width:0}
+.popsep{height:1px;background:var(--line);margin:5px 2px}
+.newb{display:block;width:100%;text-align:left;padding:8px 11px;border-radius:7px;
+  font-size:13px;color:var(--accent);font-weight:500}
+.newb:hover{background:var(--accent-soft)}
+
+/* ---------- canvas ---------- */
+main{position:relative;min-height:0}
+#canvas{position:absolute;inset:0;overflow:hidden;cursor:crosshair;
+  background:radial-gradient(circle at 1px 1px,var(--line) 1px,transparent 0) 0 0/22px 22px}
+#canvas.dragging{cursor:grabbing}
+#canvas.linking{cursor:alias}
+#svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+#nodes{position:absolute;left:0;top:0;transform-origin:0 0;pointer-events:none}
+
+.bub{position:absolute;pointer-events:auto;display:flex;flex-direction:column;align-items:center;
+  transform:translate(-50%,-50%);width:max-content}
+body.anim .bub{transition:left .4s cubic-bezier(.22,.61,.36,1),top .4s cubic-bezier(.22,.61,.36,1)}
+.circle{position:relative;min-width:98px;min-height:98px;max-width:196px;border-radius:50%;
+  background:var(--bubble);border:2px solid var(--accent-dim);
+  display:grid;place-items:center;padding:16px 19px;cursor:grab;
+  transition:border-color .12s,box-shadow .12s,background .12s}
+.bub:hover .circle{border-color:var(--accent)}
+.bub.sel .circle{border-color:var(--accent);border-width:2.5px;background:var(--accent-soft);
+  box-shadow:0 0 0 5px color-mix(in srgb,var(--accent) 12%,transparent)}
+.bub.trail .circle{border-color:var(--accent)}
+.bub.dim{opacity:.36}
+.txt{outline:0;text-align:center;font-size:13px;line-height:1.4;font-weight:500;
+  min-width:34px;word-break:break-word;cursor:text}
+.txt:empty::before{content:attr(data-ph);color:var(--faint);font-weight:400}
+.cmt{outline:0;margin-top:9px;max-width:200px;text-align:center;font-size:12px;line-height:1.5;
+  color:var(--muted);word-break:break-word;cursor:text;padding:3px 8px;border-radius:7px;min-height:0}
+.cmt:not(:empty){background:var(--bg)}
+.cmt:empty{display:none}
+.bub.sel .cmt,.bub:hover .cmt{display:block}
+.bub.sel .cmt:empty::before,.bub:hover .cmt:empty::before{content:attr(data-ph);color:var(--faint)}
+.cmt:focus{background:var(--line2)}
+
+.tools{position:absolute;top:-6px;right:-14px;display:none;gap:4px}
+.bub.sel .tools{display:flex}
+.tools button{width:23px;height:23px;border-radius:50%;background:var(--panel);
+  border:1px solid var(--line);color:var(--muted);font-size:12px;line-height:1;
+  display:grid;place-content:center;box-shadow:var(--shadow)}
+.tools button:hover{color:var(--accent);border-color:var(--accent)}
+.tools button.rm:hover{color:var(--danger);border-color:var(--danger)}
+
+.branch{fill:none;stroke:var(--accent-dim);stroke-width:1.8}
+.branch.trail{stroke:var(--accent);stroke-width:2.4}
+.branch.dim{opacity:.25}
+.xlink{fill:none;stroke:var(--link);stroke-width:1.5;stroke-dasharray:5 4}
+.xlink.dim{opacity:.2}
+.hit{fill:none;stroke:transparent;stroke-width:18;pointer-events:stroke;cursor:pointer}
+
+.empty{position:absolute;inset:0;display:grid;place-content:center;text-align:center;
+  gap:8px;color:var(--faint);pointer-events:none;padding:24px}
+.empty h2{margin:0;font-size:16px;color:var(--muted);font-weight:500}
+.empty p{margin:0;font-size:13px;line-height:1.7;max-width:330px}
+
+#hud{position:absolute;left:14px;top:14px;display:none;align-items:center;gap:9px;z-index:6;
+  background:var(--panel);border:1px solid var(--link);color:var(--link);border-radius:10px;
+  padding:7px 12px;font-size:12.5px;box-shadow:var(--shadow)}
+#hud.show{display:flex}
+#hud button{font-size:12px;color:var(--muted)}
+#zoom{position:absolute;right:12px;bottom:12px;display:flex;gap:2px;background:var(--panel);
+  border:1px solid var(--line);border-radius:9px;padding:3px;box-shadow:var(--shadow);z-index:6}
+#zoom button{width:27px;height:25px;border-radius:6px;color:var(--muted);font-size:14px}
+#zoom button:hover{background:var(--line2);color:var(--ink)}
+#zoom .lbl{display:grid;place-content:center;font-size:11px;color:var(--faint);min-width:40px}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="left">
+      <div class="brand"><div class="dots"><i></i><i></i><i></i></div><b>Trace</b></div>
+      <button id="bBoard"><span class="nm">Board</span><span class="car">▼</span></button>
+      <div class="pop" id="boards"></div>
+    </div>
+    <div class="bar">
+      <button id="bArrange">Arrange</button>
+      <button id="bFit">Fit</button>
+      <button id="bMore">···</button>
+      <div class="pop" id="menu">
+        <button id="mExport">Export all</button>
+        <button id="mImport">Import</button>
+        <button id="mClear">Clear this board</button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <div id="canvas">
+      <svg id="svg"><g id="links"></g></svg>
+      <div id="nodes"></div>
+      <div class="empty" id="empty">
+        <h2>Click anywhere to start</h2>
+        <p>A bubble appears where you click. Type in it, add a note underneath.
+           Click empty space again and the next bubble wires itself to the last one you touched.</p>
+      </div>
+      <div id="hud"><span id="hudText"></span><button id="hudCancel">cancel</button></div>
+      <div id="zoom">
+        <button id="zOut">−</button><div class="lbl" id="zLbl">100%</div>
+        <button id="zIn">+</button><button id="zFit">⤢</button>
+      </div>
+    </div>
+  </main>
+</div>
+<input type="file" id="fileIn" accept="application/json" style="display:none">
+
+<script>
+"use strict";
+const KEY = "trace.v4";
+const $ = s => document.querySelector(s);
+const SVGNS = "http://www.w3.org/2000/svg";
+const mk = (n,a={}) => { const e = document.createElementNS(SVGNS,n); for(const k in a) e.setAttribute(k,a[k]); return e; };
+const uid = () => Math.random().toString(36).slice(2,9);
+const esc = s => String(s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+/* store = every board you've made; state = the one you're looking at
+   node: {id,t,c,parent,x,y}   link: {id,from,to}                        */
+let store = { boards:[], current:null };
+let state = { nodes:{}, order:[], links:[], view:{x:0,y:0,k:1}, sel:null, last:null };
+let linking = false, armedLink = null;
+const els = {};
+
+const N = id => state.nodes[id];
+const kids = id => state.order.filter(x => N(x).parent === id);
+function trailOf(id){ const t=[]; let c=id,g=0; while(c && N(c) && g++<400){ t.unshift(c); c=N(c).parent; } return t; }
+const board = () => store.boards.find(b => b.id === store.current);
+
+/* ---------- persistence ---------- */
+function save(){
+  const b = board();
+  if(b){ b.nodes = state.nodes; b.order = state.order; b.links = state.links;
+         b.sel = state.sel; b.last = state.last; b.updated = Date.now(); }
+  try{ localStorage.setItem(KEY, JSON.stringify(store)); }catch(e){}
+}
+function load(){
+  try{ const r = JSON.parse(localStorage.getItem(KEY)||"null");
+       if(r && Array.isArray(r.boards) && r.boards.length){ store = r; return; } }catch(e){}
+  const legacy = migrate();
+  store = { boards:[ legacy || newBoard("Board 1") ], current:null };
+  store.current = store.boards[0].id;
+}
+function migrate(){                        // carry over the single board from the earlier version
+  try{ const old = JSON.parse(localStorage.getItem("trace.v3")||"null");
+       if(old && old.order && old.order.length)
+         return { id:uid(), name:"Board 1", nodes:old.nodes, order:old.order, links:old.links||[],
+                  sel:null, last:null, updated:Date.now() };
+  }catch(e){}
+  return null;
+}
+function newBoard(name){ return { id:uid(), name, nodes:{}, order:[], links:[], sel:null, last:null, updated:Date.now() }; }
+
+function openBoard(id){
+  save();
+  store.current = id;
+  const b = board();
+  Object.keys(els).forEach(k => { els[k].remove(); delete els[k]; });
+  state.nodes = b.nodes || {}; state.order = b.order || []; state.links = b.links || [];
+  state.sel = b.sel || null; state.last = b.last || null;
+  const r = $("#canvas").getBoundingClientRect();
+  state.view = { x:r.width/2, y:r.height/2, k:1 };
+  hist = []; hIdx = -1;
+  try{ localStorage.setItem(KEY, JSON.stringify(store)); }catch(e){}
+  draw(); pushHist();
+  if(state.order.length) fit();
+  renderBoards();
+}
+
+/* ---------- undo / redo (per board) ---------- */
+let hist = [], hIdx = -1, typeTimer = null;
+const snapshot = () => JSON.stringify({ nodes:state.nodes, order:state.order, links:state.links });
+function pushHist(){
+  const s = snapshot();
+  if(hIdx >= 0 && hist[hIdx] === s) return;
+  hist = hist.slice(0, hIdx+1); hist.push(s);
+  if(hist.length > 120) hist.shift();
+  hIdx = hist.length-1;
+}
+function pushHistSoon(){ clearTimeout(typeTimer); typeTimer = setTimeout(pushHist, 550); }
+function pushHistNow(){ clearTimeout(typeTimer); pushHist(); }
+function restore(snap){
+  const d = JSON.parse(snap);
+  if(document.activeElement && document.activeElement.isContentEditable) document.activeElement.blur();
+  Object.keys(els).forEach(k => { els[k].remove(); delete els[k]; });
+  state.nodes = d.nodes; state.order = d.order; state.links = d.links;
+  if(!N(state.sel)) state.sel = null;
+  if(!N(state.last)) state.last = state.order[state.order.length-1] || null;
+  save(); draw();
+}
+function undo(){ clearTimeout(typeTimer); if(hIdx > 0){ hIdx--; restore(hist[hIdx]); } }
+function redo(){ clearTimeout(typeTimer); if(hIdx < hist.length-1){ hIdx++; restore(hist[hIdx]); } }
+
+/* ---------- create / edit ---------- */
+function screenToWorld(sx, sy){
+  const r = $("#canvas").getBoundingClientRect();
+  return { x:(sx-r.left-state.view.x)/state.view.k, y:(sy-r.top-state.view.y)/state.view.k };
+}
+function createAt(sx, sy, connect){
+  const w = screenToWorld(sx, sy);
+  const n = { id:uid(), t:"", c:"", parent: connect && N(state.last) ? state.last : null, x:w.x, y:w.y };
+  state.nodes[n.id] = n; state.order.push(n.id);
+  state.sel = n.id; state.last = n.id;
+  save(); draw();
+  const el = els[n.id];
+  if(el){ const tx = el.querySelector(".txt"); tx.focus(); placeCaret(tx); }
+}
+function placeCaret(el){
+  const r = document.createRange(); r.selectNodeContents(el); r.collapse(false);
+  const s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+}
+function dropIfBlank(id){
+  const n = N(id); if(!n) return false;
+  if(n.t.trim() || n.c.trim()) return false;
+  removeNode(id); return true;
+}
+function removeNode(id){
+  const orphans = kids(id);
+  orphans.forEach(k => N(k).parent = N(id).parent);
+  delete state.nodes[id];
+  state.order = state.order.filter(x => x !== id);
+  state.links = state.links.filter(l => l.from !== id && l.to !== id);
+  if(state.sel === id) state.sel = null;
+  if(state.last === id) state.last = N(orphans[0]) ? orphans[0] : (state.order[state.order.length-1] || null);
+  if(els[id]){ els[id].remove(); delete els[id]; }
+  save(); draw(); pushHistNow();
+}
+function select(id){ state.sel = id; state.last = id; save(); draw(); }
+
+/* ---------- drawing ---------- */
+const nodesLayer = $("#nodes"), linksLayer = $("#links");
+function applyView(){
+  const v = state.view;
+  nodesLayer.style.transform = `translate(${v.x}px,${v.y}px) scale(${v.k})`;
+  linksLayer.setAttribute("transform", `translate(${v.x},${v.y}) scale(${v.k})`);
+  $("#zLbl").textContent = Math.round(v.k*100)+"%";
+}
+function draw(){
+  applyView();
+  $("#empty").style.display = state.order.length ? "none" : "grid";
+  const trail = state.sel ? new Set(trailOf(state.sel)) : null;
+  for(const id in els) if(!N(id)){ els[id].remove(); delete els[id]; }
+  for(const id of state.order){
+    const n = N(id);
+    let el = els[id];
+    if(!el){ el = buildNode(n); els[id] = el; nodesLayer.appendChild(el); }
+    el.style.left = n.x+"px"; el.style.top = n.y+"px";
+    el.className = "bub" + (state.sel===id ? " sel":"")
+      + (trail && trail.has(id) && state.sel!==id ? " trail":"")
+      + (trail && !trail.has(id) ? " dim":"");
+    const tx = el.querySelector(".txt"), cm = el.querySelector(".cmt");
+    if(document.activeElement !== tx && tx.textContent !== n.t) tx.textContent = n.t;
+    if(document.activeElement !== cm && cm.textContent !== n.c) cm.textContent = n.c;
+  }
+  drawLinks(trail);
+}
+function buildNode(n){
+  const el = document.createElement("div");
+  el.className = "bub"; el.dataset.id = n.id;
+  el.innerHTML = `<div class="circle">
+      <div class="txt" contenteditable="plaintext-only" data-ph="type…"></div>
+      <div class="tools">
+        <button class="ln" title="Draw a line to another bubble">⤳</button>
+        <button class="rm" title="Delete">×</button>
+      </div>
+    </div>
+    <div class="cmt" contenteditable="plaintext-only" data-ph="note…"></div>`;
+  const tx = el.querySelector(".txt"), cm = el.querySelector(".cmt");
+  tx.addEventListener("input", () => { N(n.id).t = tx.textContent; save(); drawLinks(); pushHistSoon(); });
+  cm.addEventListener("input", () => { N(n.id).c = cm.textContent; save(); drawLinks(); pushHistSoon(); });
+  tx.addEventListener("blur", pushHistNow);
+  cm.addEventListener("blur", pushHistNow);
+  tx.addEventListener("focus", () => select(n.id));
+  cm.addEventListener("focus", () => select(n.id));
+  tx.addEventListener("keydown", e => {
+    if(e.key === "Enter"){ e.preventDefault(); cm.focus(); placeCaret(cm); }
+    if(e.key === "Escape"){ e.preventDefault(); tx.blur(); dropIfBlank(n.id); }
+  });
+  cm.addEventListener("keydown", e => {
+    if(e.key === "Enter" && !e.shiftKey){ e.preventDefault(); cm.blur(); dropIfBlank(n.id); }
+    if(e.key === "Escape"){ e.preventDefault(); cm.blur(); dropIfBlank(n.id); }
+  });
+  el.querySelector(".rm").addEventListener("pointerdown", e => e.stopPropagation());
+  el.querySelector(".rm").addEventListener("click", e => { e.stopPropagation(); removeNode(n.id); });
+  el.querySelector(".ln").addEventListener("pointerdown", e => e.stopPropagation());
+  el.querySelector(".ln").addEventListener("click", e => { e.stopPropagation(); startLink(n.id); });
+  dragNode(el, n.id);
+  return el;
+}
+function edgePoint(id, ux, uy){
+  const el = els[id], n = N(id);
+  const c = el ? el.querySelector(".circle") : null;
+  const a = (c ? c.offsetWidth : 98)/2 + 4, b = (c ? c.offsetHeight : 98)/2 + 4;
+  const t = 1/Math.sqrt((ux/a)**2 + (uy/b)**2 || 1);
+  return { x:n.x + ux*t, y:n.y + uy*t };
+}
+function drawLinks(trailSet){
+  const trail = trailSet !== undefined ? trailSet : (state.sel ? new Set(trailOf(state.sel)) : null);
+  while(linksLayer.firstChild) linksLayer.removeChild(linksLayer.firstChild);
+  for(const id of state.order){
+    const n = N(id); if(!n.parent || !N(n.parent)) continue;
+    const p = N(n.parent);
+    const dx = n.x-p.x, dy = n.y-p.y, L = Math.hypot(dx,dy)||1;
+    const s = edgePoint(n.parent, dx/L, dy/L), e = edgePoint(id, -dx/L, -dy/L);
+    const on = trail && trail.has(id) && trail.has(n.parent);
+    const my = (s.y+e.y)/2;
+    linksLayer.appendChild(mk("path",{ d:`M${s.x},${s.y} C${s.x},${my} ${e.x},${my} ${e.x},${e.y}`,
+      class:"branch"+(on?" trail":"")+(trail&&!on?" dim":"") }));
+  }
+  for(const l of state.links){
+    const a = N(l.from), b = N(l.to); if(!a || !b) continue;
+    const dx = b.x-a.x, dy = b.y-a.y, L = Math.hypot(dx,dy)||1;
+    const bend = Math.min(120, 30+L*0.16);
+    const mx = (a.x+b.x)/2 + (-dy/L)*bend, my = (a.y+b.y)/2 + (dx/L)*bend;
+    const d1 = Math.hypot(mx-a.x,my-a.y)||1, d2 = Math.hypot(b.x-mx,b.y-my)||1;
+    const s = edgePoint(l.from,(mx-a.x)/d1,(my-a.y)/d1), e = edgePoint(l.to,(mx-b.x)/d2,(my-b.y)/d2);
+    const dim = trail && !(trail.has(l.from)||trail.has(l.to));
+    const d = `M${s.x},${s.y} Q${mx},${my} ${e.x},${e.y}`;
+    linksLayer.appendChild(mk("path",{ d, class:"xlink"+(dim?" dim":"") }));
+    const hit = mk("path",{ d, class:"hit" });
+    hit.addEventListener("click", ev => { ev.stopPropagation();
+      if(armedLink === l.id){ state.links = state.links.filter(x=>x.id!==l.id); armedLink=null; hudOff(); save(); draw(); pushHistNow(); }
+      else { armedLink = l.id; hud("Click that line again to remove it"); } });
+    linksLayer.appendChild(hit);
+  }
+}
+
+/* ---------- linking ---------- */
+function hud(t){ $("#hudText").textContent = t; $("#hud").classList.add("show"); }
+function hudOff(){ $("#hud").classList.remove("show"); armedLink = null; }
+function startLink(id){ linking = id; $("#canvas").classList.add("linking"); hud("Now click the bubble it connects to"); }
+function stopLink(){ linking = false; $("#canvas").classList.remove("linking"); hudOff(); }
+$("#hudCancel").addEventListener("click", stopLink);
+
+/* ---------- canvas ---------- */
+const cv = $("#canvas");
+let pan = null;
+cv.addEventListener("pointerdown", e => {
+  if(e.target.closest(".bub")||e.target.closest("#zoom")||e.target.closest("#hud")||e.target.closest(".hit")) return;
+  pan = { x:e.clientX, y:e.clientY, vx:state.view.x, vy:state.view.y, moved:false };
+  cv.setPointerCapture(e.pointerId);
+});
+cv.addEventListener("pointermove", e => {
+  if(!pan) return;
+  const dx = e.clientX-pan.x, dy = e.clientY-pan.y;
+  if(Math.abs(dx)+Math.abs(dy) > 4){ pan.moved = true; cv.classList.add("dragging"); }
+  state.view.x = pan.vx+dx; state.view.y = pan.vy+dy; applyView();
+});
+cv.addEventListener("pointerup", e => {
+  const was = pan; pan = null; cv.classList.remove("dragging");
+  if(!was || was.moved) return;
+  if(linking){ stopLink(); return; }
+  if(armedLink){ hudOff(); return; }
+  if(document.activeElement && document.activeElement.isContentEditable){
+    const owner = document.activeElement.closest(".bub");
+    document.activeElement.blur();
+    if(owner && dropIfBlank(owner.dataset.id)) return;
+  }
+  createAt(e.clientX, e.clientY, !e.shiftKey);
+});
+function dragNode(el, id){
+  let d = null;
+  el.addEventListener("pointerdown", e => {
+    if(e.target.classList.contains("txt") || e.target.classList.contains("cmt")) return;
+    if(e.target.closest(".tools")) return;
+    e.stopPropagation();
+    d = { x:e.clientX, y:e.clientY, nx:N(id).x, ny:N(id).y, moved:false };
+    el.setPointerCapture(e.pointerId);
+  });
+  el.addEventListener("pointermove", e => {
+    if(!d) return;
+    const dx = (e.clientX-d.x)/state.view.k, dy = (e.clientY-d.y)/state.view.k;
+    if(Math.abs(dx)+Math.abs(dy) > 2) d.moved = true;
+    N(id).x = d.nx+dx; N(id).y = d.ny+dy;
+    el.style.left = N(id).x+"px"; el.style.top = N(id).y+"px";
+    drawLinks();
+  });
+  el.addEventListener("pointerup", () => {
+    if(d && !d.moved){
+      if(linking){
+        if(linking !== id && !state.links.some(l => (l.from===linking&&l.to===id)||(l.to===linking&&l.from===id)))
+          state.links.push({ id:uid(), from:linking, to:id });
+        stopLink(); save(); draw(); pushHistNow();
+      } else select(id);
+    } else if(d && d.moved){ save(); draw(); pushHistNow(); }
+    d = null;
+  });
+}
+
+/* ---------- zoom ---------- */
+function zoomBy(f, cx, cy){
+  const r = cv.getBoundingClientRect();
+  cx = cx === undefined ? r.width/2 : cx; cy = cy === undefined ? r.height/2 : cy;
+  const k2 = Math.max(.25, Math.min(2.2, state.view.k*f));
+  state.view.x = cx-(cx-state.view.x)*(k2/state.view.k);
+  state.view.y = cy-(cy-state.view.y)*(k2/state.view.k);
+  state.view.k = k2; applyView(); drawLinks();
+}
+$("#zIn").addEventListener("click", ()=>zoomBy(1.25));
+$("#zOut").addEventListener("click", ()=>zoomBy(1/1.25));
+$("#zFit").addEventListener("click", fit);
+$("#bFit").addEventListener("click", e => { e.currentTarget.blur(); fit(); });
+cv.addEventListener("wheel", e => {
+  e.preventDefault();
+  const r = cv.getBoundingClientRect();
+  if(e.ctrlKey || e.metaKey) zoomBy(Math.exp(-e.deltaY*0.0022), e.clientX-r.left, e.clientY-r.top);
+  else { state.view.x -= e.deltaX; state.view.y -= e.deltaY; applyView(); }
+}, {passive:false});
+function fit(){
+  const r = cv.getBoundingClientRect();
+  if(!state.order.length){ state.view = {x:r.width/2, y:r.height/2, k:1}; applyView(); drawLinks(); return; }
+  let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+  state.order.forEach(id => { const n=N(id), el=els[id];
+    const w = el ? el.offsetWidth/2+20 : 70, h = el ? el.offsetHeight/2+20 : 70;
+    x0=Math.min(x0,n.x-w); x1=Math.max(x1,n.x+w); y0=Math.min(y0,n.y-h); y1=Math.max(y1,n.y+h); });
+  const pad = 50;
+  const k = Math.max(.25, Math.min(1.1, Math.min((r.width-pad*2)/(x1-x0||1),(r.height-pad*2)/(y1-y0||1))));
+  state.view = { k, x:r.width/2-((x0+x1)/2)*k, y:r.height/2-((y0+y1)/2)*k };
+  applyView(); drawLinks();
+}
+
+/* ---------- arrange ---------- */
+function arrange(){
+  if(!state.order.length) return;
+  pushHistNow();
+  const W = id => (els[id] ? els[id].offsetWidth : 120);
+  const H = id => (els[id] ? els[id].offsetHeight : 120);
+  const GAPX = 44, GAPY = 64;
+  const rowH = Math.max(...state.order.map(H)) + GAPY;
+  const childMap = {}; state.order.forEach(id => childMap[id] = []);
+  const roots = [];
+  state.order.forEach(id => { const p = N(id).parent;
+    if(p && childMap[p]) childMap[p].push(id); else roots.push(id); });
+  const byX = (a,b) => N(a).x - N(b).x;
+  roots.sort(byX); state.order.forEach(id => childMap[id].sort(byX));
+  const target = {}, seen = new Set();
+  let cursor = 0;
+  function place(id, depth){
+    if(seen.has(id)) return cursor; seen.add(id);
+    const ch = childMap[id];
+    let x;
+    if(!ch.length){ x = cursor + W(id)/2; cursor += W(id) + GAPX; }
+    else { const xs = ch.map(c => place(c, depth+1));
+           x = (xs[0]+xs[xs.length-1])/2;
+           if(x - W(id)/2 < 0) x = W(id)/2; }
+    target[id] = { x, y: depth*rowH };
+    return x;
+  }
+  roots.forEach(r => { place(r,0); cursor += GAPX*1.6; });
+  state.order.forEach(id => { if(!seen.has(id)) place(id,0); });
+  const xs = state.order.map(id=>target[id].x), ys = state.order.map(id=>target[id].y);
+  const cx = (Math.min(...xs)+Math.max(...xs))/2, cy = (Math.min(...ys)+Math.max(...ys))/2;
+  state.order.forEach(id => { const n = N(id);
+    n.x = target[id].x-cx; n.y = target[id].y-cy;
+    if(els[id]){ els[id].style.left = n.x+"px"; els[id].style.top = n.y+"px"; } });
+  document.body.classList.add("anim");
+  fit();
+  const t0 = performance.now();
+  (function tick(){ drawLinks(); if(performance.now()-t0 < 480) requestAnimationFrame(tick);
+    else { document.body.classList.remove("anim"); save(); pushHistNow(); } })();
+}
+$("#bArrange").addEventListener("click", e => { e.currentTarget.blur(); arrange(); });
+
+/* ---------- board switcher ---------- */
+let renaming = null;
+function renderBoards(){
+  const b = board();
+  $("#bBoard").querySelector(".nm").textContent = b ? b.name : "Board";
+  const pop = $("#boards");
+  const sorted = store.boards.slice();
+  pop.innerHTML = sorted.map(bd => {
+    if(renaming === bd.id)
+      return `<div class="brow" data-id="${bd.id}"><input value="${esc(bd.name)}" data-rn="${bd.id}"></div>`;
+    return `<div class="brow${bd.id===store.current?" on":""}" data-id="${bd.id}">
+      <button class="pick" data-open="${bd.id}">${esc(bd.name)}
+        <span class="ct">${(bd.order||[]).length}</span></button>
+      <button class="mini" data-ren="${bd.id}" title="Rename">✎</button>
+      <button class="mini del" data-del="${bd.id}" title="Delete board">×</button></div>`;
+  }).join("") + `<div class="popsep"></div><button class="newb" id="bNew">+ New board</button>`;
+
+  pop.querySelectorAll("[data-open]").forEach(el => el.addEventListener("click", () => {
+    openBoard(el.dataset.open); pop.classList.remove("show"); }));
+  pop.querySelectorAll("[data-ren]").forEach(el => el.addEventListener("click", e => {
+    e.stopPropagation(); renaming = el.dataset.ren; renderBoards();
+    const inp = pop.querySelector("[data-rn]"); if(inp){ inp.focus(); inp.select(); } }));
+  pop.querySelectorAll("[data-rn]").forEach(inp => {
+    const commit = () => { const bd = store.boards.find(x=>x.id===inp.dataset.rn);
+      if(bd && inp.value.trim()) bd.name = inp.value.trim();
+      renaming = null; save(); renderBoards(); };
+    inp.addEventListener("keydown", e => { if(e.key==="Enter") commit();
+      if(e.key==="Escape"){ renaming = null; renderBoards(); } });
+    inp.addEventListener("blur", commit);
+  });
+  pop.querySelectorAll("[data-del]").forEach(el => el.addEventListener("click", e => {
+    e.stopPropagation();
+    if(el.dataset.armed !== "1"){ el.dataset.armed = "1"; el.textContent = "sure?"; el.style.width="auto"; el.style.padding="0 7px"; return; }
+    const id = el.dataset.del;
+    store.boards = store.boards.filter(x => x.id !== id);
+    if(!store.boards.length) store.boards.push(newBoard("Board 1"));
+    if(store.current === id) openBoard(store.boards[0].id);
+    else { save(); renderBoards(); }
+  }));
+  const nb = pop.querySelector("#bNew");
+  if(nb) nb.addEventListener("click", () => {
+    const bd = newBoard("Board " + (store.boards.length+1));
+    store.boards.push(bd); openBoard(bd.id); pop.classList.remove("show"); });
+}
+$("#bBoard").addEventListener("click", e => { e.stopPropagation();
+  $("#menu").classList.remove("show"); renaming = null; renderBoards();
+  $("#boards").classList.toggle("show"); });
+$("#bMore").addEventListener("click", e => { e.stopPropagation();
+  $("#boards").classList.remove("show"); $("#menu").classList.toggle("show"); });
+document.addEventListener("click", e => {
+  if(!e.target.closest(".left")) $("#boards").classList.remove("show");
+  if(!e.target.closest(".bar")) $("#menu").classList.remove("show");
+});
+
+/* ---------- export / import / clear ---------- */
+$("#mExport").addEventListener("click", () => {
+  save();
+  const blob = new Blob([JSON.stringify({ trace:1, boards:store.boards }, null, 2)],{type:"application/json"});
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+  a.download = "trace-boards.json"; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+  $("#menu").classList.remove("show");
+});
+$("#mImport").addEventListener("click", () => { $("#fileIn").click(); $("#menu").classList.remove("show"); });
+$("#fileIn").addEventListener("change", ev => {
+  const f = ev.target.files[0]; if(!f) return;
+  const rd = new FileReader();
+  rd.onload = () => { try{
+    const d = JSON.parse(rd.result);
+    const incoming = Array.isArray(d.boards) ? d.boards
+      : (d.nodes && d.order) ? [{ id:uid(), name:f.name.replace(/\.json$/i,""), nodes:d.nodes, order:d.order, links:d.links||[] }]
+      : null;
+    if(!incoming) return;
+    incoming.forEach(bd => store.boards.push(Object.assign(newBoard(bd.name||"Imported"), bd, { id:uid() })));
+    openBoard(store.boards[store.boards.length-1].id);
+  }catch(e){} };
+  rd.readAsText(f); ev.target.value = "";
+});
+let armed = 0;
+$("#mClear").addEventListener("click", e => {
+  const b = e.currentTarget;
+  if(!armed){ armed = 1; b.textContent = "Sure? click again"; setTimeout(()=>{armed=0;b.textContent="Clear this board";},3500); return; }
+  armed = 0; b.textContent = "Clear this board"; $("#menu").classList.remove("show");
+  Object.keys(els).forEach(k=>{els[k].remove();delete els[k];});
+  state.nodes={}; state.order=[]; state.links=[]; state.sel=null; state.last=null;
+  save(); draw(); fit(); pushHistNow(); renderBoards();
+});
+
+/* ---------- keys ---------- */
+document.addEventListener("keydown", e => {
+  const mod = e.metaKey || e.ctrlKey;
+  if(mod && (e.key === "z" || e.key === "Z")){ e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+  if(mod && (e.key === "y" || e.key === "Y")){ e.preventDefault(); redo(); return; }
+  if(e.target.isContentEditable) return;
+  if(e.key === "Escape"){ if(linking) stopLink(); else if(state.sel){ state.sel = null; save(); draw(); } }
+  if((e.key === "Backspace" || e.key === "Delete") && state.sel){ e.preventDefault(); removeNode(state.sel); }
+});
+window.addEventListener("resize", drawLinks);
+
+/* ---------- boot ---------- */
+load();
+const b0 = board() || store.boards[0];
+store.current = b0.id;
+state.nodes = b0.nodes||{}; state.order = b0.order||[]; state.links = b0.links||[];
+state.sel = b0.sel||null; state.last = b0.last||null;
+const r0 = cv.getBoundingClientRect();
+state.view = { x:r0.width/2, y:r0.height/2, k:1 };
+draw(); pushHist(); renderBoards();
+if(state.order.length) fit();
+</script>
+</body>
+</html>

@@ -1,0 +1,909 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Trace — tracing notes</title>
+<style>
+:root{
+  --bg:#faf9f7; --panel:#ffffff; --ink:#1b1a18; --muted:#77726c; --faint:#a8a29b;
+  --line:#e6e1da; --line2:#f0ece6;
+  --accent:#b4532a; --accent-soft:#f6e9e2;
+  --infer:#a09a92; --conflict:#cf2f21; --conflict-soft:#fceeeb;
+  --bubble:#ffffff; --bubble-ink:#1b1a18;
+  --shadow:0 1px 2px rgba(28,26,24,.06), 0 8px 24px rgba(28,26,24,.06);
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#131215; --panel:#1a191d; --ink:#eceae7; --muted:#9b958d; --faint:#6a655e;
+    --line:#2b292f; --line2:#232127;
+    --accent:#e08355; --accent-soft:#2c2019;
+    --infer:#6e6862; --conflict:#ff6a55; --conflict-soft:#37191a;
+    --bubble:#222027; --bubble-ink:#eceae7;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font:15px/1.5 ui-sans-serif,-apple-system,"SF Pro Text","Segoe UI",Inter,system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased; overflow:hidden;
+}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+input,textarea,select{font:inherit;color:inherit}
+
+/* ---------- shell ---------- */
+#app{display:grid;grid-template-rows:auto 1fr;height:100%}
+header{
+  display:flex;align-items:flex-start;gap:14px;padding:14px 16px 12px;
+  border-bottom:1px solid var(--line);background:var(--panel);z-index:5;
+}
+.brand{display:flex;align-items:center;gap:9px;padding-top:7px;flex:0 0 auto}
+.brand .dots{position:relative;width:22px;height:22px}
+.brand .dots i{position:absolute;border-radius:50%;background:var(--accent);display:block}
+.brand .dots i:nth-child(1){width:9px;height:9px;left:0;top:0;opacity:.95}
+.brand .dots i:nth-child(2){width:7px;height:7px;left:12px;top:6px;opacity:.6}
+.brand .dots i:nth-child(3){width:5px;height:5px;left:4px;top:15px;opacity:.35}
+.brand b{font-size:15px;letter-spacing:-.01em;font-weight:600}
+.brand span{font-size:12px;color:var(--faint)}
+
+.composer{flex:1 1 auto;min-width:0;max-width:760px}
+.inputwrap{
+  display:flex;align-items:flex-start;gap:8px;background:var(--bg);
+  border:1px solid var(--line);border-radius:12px;padding:8px 10px;transition:border-color .15s,box-shadow .15s;
+}
+.inputwrap:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+#entry{
+  flex:1;border:0;outline:0;background:none;resize:none;line-height:1.45;
+  max-height:120px;padding:4px 2px;
+}
+#entry::placeholder{color:var(--faint)}
+.kbd{font:11px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--faint);
+  border:1px solid var(--line);border-radius:5px;padding:2px 5px;background:var(--panel);white-space:nowrap}
+.hint{font-size:11.5px;color:var(--faint);padding:6px 4px 0}
+.hint code{font:11.5px ui-monospace,Menlo,monospace;color:var(--muted);background:var(--line2);
+  padding:1px 5px;border-radius:4px}
+
+.tools{display:flex;align-items:center;gap:4px;padding-top:5px;flex:0 0 auto}
+.tbtn{padding:6px 10px;border-radius:8px;font-size:12.5px;color:var(--muted);border:1px solid transparent;white-space:nowrap}
+.tbtn:hover{background:var(--line2);color:var(--ink)}
+.tbtn.on{background:var(--accent-soft);color:var(--accent);border-color:transparent}
+
+/* ---------- confirm tray ---------- */
+#tray{max-width:760px;margin-top:8px;display:none}
+#tray.show{display:block}
+.tray-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);overflow:hidden}
+.tray-head{display:flex;align-items:center;justify-content:space-between;
+  padding:7px 12px;border-bottom:1px solid var(--line2);font-size:11.5px;
+  letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
+.prow{display:flex;align-items:center;gap:6px;padding:8px 12px;border-bottom:1px solid var(--line2);flex-wrap:wrap}
+.prow:last-of-type{border-bottom:0}
+.prow.bad{background:var(--conflict-soft)}
+.tin{border:1px solid var(--line);background:var(--bg);border-radius:7px;padding:4px 8px;
+  font-size:13.5px;min-width:64px;max-width:170px;outline:0}
+.tin:focus{border-color:var(--accent)}
+.tin.reason{flex:1 1 200px;max-width:none;color:var(--muted)}
+.tsel{border:1px solid var(--line);background:var(--bg);border-radius:7px;padding:4px 6px;font-size:13px;outline:0;cursor:pointer}
+.prow .x{color:var(--faint);padding:2px 6px;border-radius:6px;font-size:15px;line-height:1}
+.prow .x:hover{background:var(--line2);color:var(--conflict)}
+.prow .warn{font-size:12px;color:var(--conflict);flex-basis:100%}
+.tray-foot{display:flex;gap:8px;align-items:center;padding:9px 12px;background:var(--line2)}
+.primary{background:var(--accent);color:#fff;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:500}
+.primary:hover{filter:brightness(1.06)}
+.ghost{color:var(--muted);font-size:13px;padding:6px 10px;border-radius:8px}
+.ghost:hover{background:var(--line);color:var(--ink)}
+
+/* ---------- body ---------- */
+main{display:grid;grid-template-columns:1fr 300px;min-height:0;position:relative}
+main.nopanel{grid-template-columns:1fr 0}
+#canvas{position:relative;overflow:hidden;background:
+  radial-gradient(circle at 1px 1px, var(--line) 1px, transparent 0) 0 0/22px 22px;
+  cursor:grab}
+#canvas.dragging{cursor:grabbing}
+#svg{position:absolute;inset:0;width:100%;height:100%;touch-action:none}
+
+.node circle{fill:var(--bubble);stroke:var(--line);stroke-width:1.5;transition:stroke .12s,fill .12s}
+.node text{fill:var(--bubble-ink);font-size:12.5px;font-weight:500;text-anchor:middle;
+  dominant-baseline:central;pointer-events:none;user-select:none}
+.node{cursor:pointer}
+.node:hover circle{stroke:var(--accent)}
+.node.sel circle{stroke:var(--accent);stroke-width:2.5;fill:var(--accent-soft)}
+.node.bad circle{stroke:var(--conflict);stroke-width:2}
+.node.dim{opacity:.32}
+.edge{fill:none;stroke:var(--accent);stroke-width:1.6}
+.edge.inferred{stroke:var(--infer);stroke-width:1.3;stroke-dasharray:4 4;opacity:.85}
+.edge.conflict{stroke:var(--conflict);stroke-width:2}
+.edge.sel{stroke-width:3}
+.edge.dim{opacity:.12}
+.hit{fill:none;stroke:transparent;stroke-width:16;cursor:pointer}
+.elab{font-size:10px;fill:var(--faint);text-anchor:middle;pointer-events:none;user-select:none}
+.elab.inferred{font-style:italic}
+
+.empty{position:absolute;inset:0;display:grid;place-content:center;text-align:center;
+  gap:10px;color:var(--faint);pointer-events:none;padding:24px}
+.empty h2{margin:0;font-size:17px;font-weight:600;color:var(--muted)}
+.empty p{margin:0;font-size:13.5px;max-width:360px}
+.empty .ex{font:12.5px ui-monospace,Menlo,monospace;color:var(--muted);
+  background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:7px 11px;display:inline-block;margin-top:2px}
+
+#alert{position:absolute;left:14px;top:14px;display:none;align-items:center;gap:9px;
+  background:var(--conflict-soft);border:1px solid var(--conflict);color:var(--conflict);
+  border-radius:10px;padding:7px 12px;font-size:12.5px;box-shadow:var(--shadow);cursor:pointer;z-index:3}
+#alert.show{display:flex}
+#zoom{position:absolute;right:14px;bottom:14px;display:flex;gap:2px;background:var(--panel);
+  border:1px solid var(--line);border-radius:9px;padding:3px;box-shadow:var(--shadow);z-index:3}
+#zoom button{width:28px;height:26px;border-radius:6px;color:var(--muted);font-size:14px}
+#zoom button:hover{background:var(--line2);color:var(--ink)}
+#zoom .lbl{font-size:11px;color:var(--faint);display:grid;place-content:center;padding:0 7px;min-width:44px}
+
+/* ---------- side panel ---------- */
+aside{border-left:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;min-height:0;overflow:hidden}
+main.nopanel aside{display:none}
+.tabs{display:flex;gap:2px;padding:8px 8px 0;border-bottom:1px solid var(--line);flex:0 0 auto}
+.tab{padding:6px 10px 8px;font-size:12.5px;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px}
+.tab.on{color:var(--ink);border-bottom-color:var(--accent);font-weight:500}
+.tab .pill{font-size:10px;background:var(--conflict);color:#fff;border-radius:20px;padding:0 5px;margin-left:4px;vertical-align:1px}
+.pane{padding:14px;overflow:auto;flex:1;min-height:0}
+.pane h3{margin:0 0 3px;font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--faint);font-weight:600}
+.pane .none{color:var(--faint);font-size:13px;padding:14px 0;line-height:1.6}
+
+.claimline{display:flex;align-items:center;gap:7px;font-size:14px;margin:2px 0 10px;flex-wrap:wrap}
+.chip{background:var(--bubble);border:1px solid var(--line);border-radius:20px;padding:2px 10px;font-size:13px;font-weight:500}
+.op{color:var(--accent);font-weight:600}
+.tagline{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);margin-bottom:9px}
+.tagline.inf{color:var(--infer)}
+.tagline.bad{color:var(--conflict)}
+.reason{background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:9px 11px;
+  font-size:13.5px;line-height:1.55;color:var(--ink);white-space:pre-wrap;word-break:break-word}
+.reason.blank{color:var(--faint);font-style:italic}
+.rtext{width:100%;border:1px solid var(--line);background:var(--bg);border-radius:9px;padding:9px 11px;
+  font-size:13.5px;line-height:1.55;resize:vertical;min-height:70px;outline:0}
+.rtext:focus{border-color:var(--accent)}
+
+.step{position:relative;padding:0 0 12px 18px;border-left:2px solid var(--line);margin-left:5px}
+.step:last-child{border-left-color:transparent;padding-bottom:2px}
+.step::before{content:"";position:absolute;left:-5px;top:5px;width:8px;height:8px;border-radius:50%;
+  background:var(--accent);box-shadow:0 0 0 3px var(--panel)}
+.step .s1{font-size:13.5px;font-weight:500;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.step .s2{font-size:12.5px;color:var(--muted);margin-top:3px;line-height:1.5}
+.step .s2.blank{color:var(--faint);font-style:italic}
+
+.rowitem{display:flex;align-items:center;gap:9px;padding:7px 8px;border-radius:9px;cursor:pointer;margin:0 -8px}
+.rowitem:hover{background:var(--line2)}
+.rowitem .rk{font:11px ui-monospace,Menlo,monospace;color:var(--faint);width:16px;text-align:right;flex:0 0 auto}
+.rowitem .nm{font-size:13.5px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rowitem .ct{font-size:11px;color:var(--faint)}
+.rowitem.bad .nm{color:var(--conflict)}
+.tier{margin:14px 0 6px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);
+  display:flex;align-items:center;gap:8px}
+.tier::after{content:"";flex:1;height:1px;background:var(--line)}
+.tier:first-child{margin-top:0}
+
+.conf{border:1px solid var(--conflict);background:var(--conflict-soft);border-radius:10px;
+  padding:10px 12px;margin-bottom:10px;cursor:pointer}
+.conf .ch{font-size:12px;color:var(--conflict);font-weight:600;margin-bottom:5px}
+.conf .cb{font-size:13px;line-height:1.6}
+
+.mini{font-size:12px;color:var(--muted);margin-top:6px}
+.act{display:flex;gap:6px;margin-top:14px;flex-wrap:wrap}
+.act button{font-size:12.5px;padding:5px 10px;border-radius:7px;border:1px solid var(--line);color:var(--muted)}
+.act button:hover{background:var(--line2);color:var(--ink)}
+.act button.danger:hover{background:var(--conflict-soft);color:var(--conflict);border-color:var(--conflict)}
+.sep{height:1px;background:var(--line);margin:16px 0}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="brand">
+      <div class="dots"><i></i><i></i><i></i></div>
+      <div><b>Trace</b><br><span>tracing notes</span></div>
+    </div>
+
+    <div class="composer">
+      <div class="inputwrap">
+        <textarea id="entry" rows="1" placeholder="why is c greater than b — ships faster, fewer deps"></textarea>
+        <span class="kbd" id="kbdhint">⏎ read</span>
+      </div>
+      <div class="hint">
+        <code>a &gt; b</code> <code>a is better than b</code> <code>a causes b</code>
+        <code>a depends on b</code> <code>a = b</code> · add <code>because …</code> · one per line
+      </div>
+      <div id="tray"><div class="tray-card">
+        <div class="tray-head"><span id="trayTitle">I read this as</span><span class="kbd">⌘⏎ save</span></div>
+        <div id="trayRows"></div>
+        <div class="tray-foot">
+          <button class="primary" id="commit">Save</button>
+          <button class="ghost" id="cancel">Discard</button>
+          <span class="mini" id="trayNote" style="margin-left:auto"></span>
+        </div>
+      </div></div>
+    </div>
+
+    <div class="tools">
+      <button class="tbtn on" id="tInfer" title="Show links the app worked out for you">Inferred</button>
+      <button class="tbtn" id="tRelayout" title="Re-run auto layout">Tidy</button>
+      <button class="tbtn" id="tPanel" title="Toggle side panel">Panel</button>
+      <button class="tbtn" id="tExport" title="Download JSON">Export</button>
+      <button class="tbtn" id="tImport" title="Load JSON">Import</button>
+      <button class="tbtn" id="tClear" title="Delete everything">Clear</button>
+    </div>
+  </header>
+
+  <main id="main">
+    <div id="canvas">
+      <svg id="svg"><defs>
+        <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker>
+        <marker id="ai" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="var(--infer)"/></marker>
+        <marker id="ac" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="var(--conflict)"/></marker>
+      </defs><g id="scene"></g></svg>
+      <div class="empty" id="empty">
+        <h2>Nothing traced yet</h2>
+        <p>Type a comparison up top. Keep writing them and the bubbles wire themselves together.</p>
+        <div class="ex">why is c greater than b<br>why is b greater than g</div>
+      </div>
+      <div id="alert"><span>⚠</span><span id="alertText"></span></div>
+      <div id="zoom">
+        <button id="zOut" title="Zoom out">−</button>
+        <div class="lbl" id="zLbl">100%</div>
+        <button id="zIn" title="Zoom in">+</button>
+        <button id="zFit" title="Fit to view">⤢</button>
+      </div>
+    </div>
+
+    <aside>
+      <div class="tabs">
+        <button class="tab on" data-tab="detail">Details</button>
+        <button class="tab" data-tab="order">Order</button>
+        <button class="tab" data-tab="issues">Issues<span class="pill" id="issuePill" style="display:none">0</span></button>
+      </div>
+      <div class="pane" id="pane"></div>
+    </aside>
+  </main>
+</div>
+
+<input type="file" id="fileIn" accept="application/json" style="display:none">
+
+<script>
+"use strict";
+const KEY = "tracenotes.v1";
+const $  = s => document.querySelector(s);
+const svgEl = document.createElementNS.bind(document, "http://www.w3.org/2000/svg");
+const SVGNS = "http://www.w3.org/2000/svg";
+const mk = (n,a={}) => { const e=document.createElementNS(SVGNS,n); for(const k in a) e.setAttribute(k,a[k]); return e; };
+
+/* ============ state ============ */
+let state = { items:{}, claims:[], pos:{}, view:{x:0,y:0,k:1}, showInferred:true, panel:true };
+let sel = null;          // {type:'node',id} | {type:'edge',key}
+let tab = "detail";
+let pending = [];        // parsed rows awaiting confirm
+let derived = null;
+
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify({items:state.items,claims:state.claims,pos:state.pos,showInferred:state.showInferred,panel:state.panel})); }catch(e){} }
+function load(){
+  try{ const r = JSON.parse(localStorage.getItem(KEY)||"null"); if(r){ Object.assign(state, r); state.view={x:0,y:0,k:1}; } }catch(e){}
+}
+const uid = () => Math.random().toString(36).slice(2,9);
+
+/* ============ relations ============ */
+const REL = {
+  gt:      { sym:">",  label:"is greater than", word:"greater than", transitive:true,  dir:1 },
+  eq:      { sym:"=",  label:"is the same as",  word:"equal to",     transitive:false, dir:0 },
+  causes:  { sym:"→",  label:"causes",          word:"causes",       transitive:true,  dir:1 },
+  depends: { sym:"⇢",  label:"depends on",      word:"depends on",   transitive:true,  dir:1 }
+};
+
+/* ============ parser ============ */
+const STRIP_LEAD = /^(?:why\s+(?:is|are|was|were|does|do|did|would|should)\s+|why\s+|how\s+come\s+|because\s+|note\s*[:\-]\s*|q\s*[:\-]\s*|\d+[.)]\s*|[-*•]\s+)/i;
+const REASON_SPLIT = /^(.*?)(?:\s+(?:because|since|bc|b\/c)\s+|\s*[—–]\s+|\s+--\s+|\s*::\s*|\s*\|\s*)(.*)$/i;
+const PATTERNS = [
+  [/^(.+?)\s*(?:>=|≥)\s*(.+)$/,                                                                       "gt"],
+  [/^(.+?)\s*(?:<=|≤)\s*(.+)$/,                                                                       "lt"],
+  [/^(.+?)\s*(?:>|»)\s*(.+)$/,                                                                        "gt"],
+  [/^(.+?)\s*(?:<|«)\s*(.+)$/,                                                                        "lt"],
+  [/^(.+?)\s*(?:->|-->|→|=>|⇒)\s*(.+)$/,                                                              "causes"],
+  [/^(.+?)\s*(?:==|=|≡)\s*(.+)$/,                                                                     "eq"],
+  [/^(.+?)\s+(?:is|are|was|were|feels?|seems?|ranks?)?\s*(?:way\s+|much\s+|far\s+|a\s+bit\s+)?(?:greater|bigger|larger|higher|better|stronger|faster|cheaper|safer|more\s+important|more\s+useful|preferable|superior|beats?|outranks?|wins?\s+over)\s*(?:than|then|to|that|over)?\s+(.+)$/i, "gt"],
+  [/^(.+?)\s+(?:is|are|was|were|feels?|seems?|ranks?)?\s*(?:way\s+|much\s+|far\s+|a\s+bit\s+)?(?:less|lesser|smaller|lower|worse|weaker|slower|inferior|loses?\s+to)\s*(?:than|then|to|that)?\s+(.+)$/i, "lt"],
+  [/^(.+?)\s+(?:causes?|caused|leads?\s+to|led\s+to|results?\s+in|drives?|produces?|triggers?|explains?)\s+(.+)$/i, "causes"],
+  [/^(.+?)\s+(?:depends?\s+on|relies?\s+on|requires?|needs?|is\s+blocked\s+by|blocked\s+by|comes?\s+from|follows?\s+from)\s+(.+)$/i, "depends"],
+  [/^(.+?)\s+(?:equals?|is\s+equal\s+to|is\s+the\s+same\s+as|same\s+as|ties?\s+with|matches)\s+(.+)$/i,  "eq"]
+];
+
+function cleanTerm(t){
+  return String(t||"")
+    .replace(/^[\s"'“”‘’(\[]+|[\s"'“”‘’)\]]+$/g,"")
+    .replace(/[?!.,;:]+$/,"")
+    .replace(/^(?:the|a|an)\s+/i,"")
+    .replace(/\s+/g," ")
+    .trim();
+}
+function parseLine(raw){
+  let s = String(raw).trim();
+  if(!s) return null;
+  s = s.replace(/[?!]+$/,"").trim();
+  let prev; do { prev = s; s = s.replace(STRIP_LEAD,"").trim(); } while(s !== prev);
+  let reason = "";
+  const rm = s.match(REASON_SPLIT);
+  if(rm && rm[1].trim()){ s = rm[1].trim(); reason = cleanReason(rm[2]); }
+  for(const [re, kind] of PATTERNS){
+    const m = s.match(re);
+    if(!m) continue;
+    let a = cleanTerm(m[1]), b = cleanTerm(m[2]);
+    if(!a || !b) continue;
+    if(kind === "lt") return { a:b, b:a, rel:"gt", reason, raw };
+    return { a, b, rel:kind, reason, raw };
+  }
+  return { a:"", b:"", rel:"gt", reason: reason || "", raw, unparsed:true };
+}
+function cleanReason(r){ return String(r||"").replace(/^[\s—–:|-]+/,"").replace(/[\s.]+$/,"").trim(); }
+
+/* ============ items & claims ============ */
+const norm = s => s.toLowerCase().replace(/\s+/g," ").trim();
+function ensureItem(label){
+  const id = norm(label);
+  if(!state.items[id]) state.items[id] = { id, label: label.trim() };
+  return id;
+}
+function addClaim(a,b,rel,reason){
+  const ia = ensureItem(a), ib = ensureItem(b);
+  if(ia === ib) return null;
+  const dup = state.claims.find(c => c.a===ia && c.b===ib && c.rel===rel);
+  if(dup){ if(reason){ dup.reason = dup.reason ? dup.reason+" · "+reason : reason; } return dup; }
+  const c = { id:uid(), a:ia, b:ib, rel, reason: reason||"", ts: Date.now() };
+  state.claims.push(c);
+  return c;
+}
+function removeClaim(id){
+  state.claims = state.claims.filter(c => c.id !== id);
+  const used = new Set(); state.claims.forEach(c => { used.add(c.a); used.add(c.b); });
+  Object.keys(state.items).forEach(k => { if(!used.has(k)){ delete state.items[k]; delete state.pos[k]; } });
+}
+
+/* ============ derivation: inference, proofs, conflicts ============ */
+function derive(){
+  const ids = Object.keys(state.items);
+  const adj = {};                       // rel -> from -> [claim]
+  for(const r in REL) adj[r] = {};
+  for(const c of state.claims){ (adj[c.rel][c.a] = adj[c.rel][c.a] || []).push(c); }
+
+  function path(rel, from, to){         // shortest chain of stated claims from->to
+    if(from === to) return null;
+    const seen = new Set([from]); const q = [from]; const back = {};
+    while(q.length){
+      const n = q.shift();
+      for(const c of (adj[rel][n]||[])){
+        if(seen.has(c.b)) continue;
+        seen.add(c.b); back[c.b] = c;
+        if(c.b === to){ const chain = []; let cur = to; while(cur !== from){ const e = back[cur]; chain.unshift(e); cur = e.a; } return chain; }
+        q.push(c.b);
+      }
+    }
+    return null;
+  }
+
+  const stated = new Set(state.claims.map(c => c.rel+"|"+c.a+"|"+c.b));
+  const inferred = [];
+  for(const rel in REL){
+    if(!REL[rel].transitive) continue;
+    for(const from of ids){
+      // BFS with depth
+      const dist = {[from]:0}; const q=[from];
+      while(q.length){ const n=q.shift();
+        for(const c of (adj[rel][n]||[])){ if(dist[c.b]===undefined){ dist[c.b]=dist[n]+1; q.push(c.b); } } }
+      for(const to in dist){
+        if(to===from || dist[to] < 2) continue;
+        if(stated.has(rel+"|"+from+"|"+to)) continue;
+        const chain = path(rel, from, to);
+        if(chain) inferred.push({ id:"i:"+rel+":"+from+":"+to, a:from, b:to, rel, inferred:true, chain });
+      }
+    }
+  }
+
+  // conflicts
+  const conflicts = [];
+  const badClaims = new Set(), badNodes = new Set();
+  for(const c of state.claims){
+    if(!REL[c.rel].transitive) continue;
+    const back = path(c.rel, c.b, c.a);
+    if(back){
+      const loop = [c].concat(back);
+      const key = loop.map(x=>x.id).slice().sort().join(",");
+      if(!conflicts.some(x => x.key === key)){
+        conflicts.push({ key, kind:"cycle", rel:c.rel, loop });
+        loop.forEach(x => { badClaims.add(x.id); badNodes.add(x.a); badNodes.add(x.b); });
+      }
+    }
+  }
+  for(const e of state.claims.filter(c => c.rel === "eq")){
+    const g = state.claims.find(c => c.rel==="gt" && ((c.a===e.a&&c.b===e.b)||(c.a===e.b&&c.b===e.a)))
+           || (path("gt", e.a, e.b) ? {via:true} : null);
+    if(g){
+      const key = "eqgt:"+[e.a,e.b].sort().join("|");
+      if(!conflicts.some(x=>x.key===key)){
+        conflicts.push({ key, kind:"eqgt", rel:"eq", a:e.a, b:e.b, loop:[e].concat(g.id?[g]:[]) });
+        badClaims.add(e.id); if(g.id) badClaims.add(g.id);
+        badNodes.add(e.a); badNodes.add(e.b);
+      }
+    }
+  }
+
+  // ranking (greatest at rank 0)
+  const rank = {}; ids.forEach(i => rank[i] = 0);
+  const dirEdges = state.claims.filter(c => REL[c.rel].dir === 1);
+  for(let it=0; it<ids.length+2; it++){
+    let ch = false;
+    for(const c of dirEdges){ if(rank[c.b] < rank[c.a]+1){ rank[c.b] = rank[c.a]+1; ch = true; } }
+    if(!ch) break;
+  }
+  // a chain that passes through a contradiction proves nothing — drop it
+  const clean = inferred.filter(e => !e.chain.some(s => badClaims.has(s.id)));
+  const suppressed = inferred.length - clean.length;
+
+  return { inferred: clean, conflicts, badClaims, badNodes, rank, path, adj, suppressed };
+}
+
+/* ============ layout ============ */
+const R = id => { const L = (state.items[id]||{label:""}).label.length; return Math.max(21, Math.min(34, 19 + L*1.7)); };
+const short = s => s.length > 13 ? s.slice(0,12) + "…" : s;
+
+function autoLayout(){
+  const { rank } = derived;
+  const ids = Object.keys(state.items);
+  if(!ids.length) return;
+  // separate unconnected clusters so their arrows never tangle
+  const par = {}; ids.forEach(i => par[i] = i);
+  const find = a => par[a] === a ? a : (par[a] = find(par[a]));
+  state.claims.forEach(c => { const x = find(c.a), y = find(c.b); if(x !== y) par[x] = y; });
+  const comps = {}; ids.forEach(i => (comps[find(i)] = comps[find(i)] || []).push(i));
+  const keys = Object.keys(comps).sort((a,b) => comps[b].length - comps[a].length);
+
+  const GY = 118, GX = 116, GAP = 150;
+  const placed = {};
+  let cursor = 0;
+  keys.forEach(k => {
+    const memb = comps[k];
+    const base = Math.min(...memb.map(id => rank[id]));
+    const rows = {};
+    memb.forEach(id => (rows[rank[id]-base] = rows[rank[id]-base] || []).push(id));
+    const lv = Object.keys(rows).map(Number).sort((a,b)=>a-b);
+    let maxW = 0;
+    lv.forEach(l => { maxW = Math.max(maxW, (rows[l].length-1)*GX); });
+    lv.forEach(l => {
+      const row = rows[l].slice().sort((a,b) => state.items[a].label.localeCompare(state.items[b].label));
+      const w = (row.length-1)*GX;
+      row.forEach((id,i) => { placed[id] = { x: cursor + maxW/2 + i*GX - w/2, y: l*GY }; });
+    });
+    cursor += maxW + GAP;
+  });
+  ids.forEach(id => { if(!state.pos[id]) state.pos[id] = placed[id]; });
+}
+function fit(){
+  const ids = Object.keys(state.items);
+  const cv = $("#canvas").getBoundingClientRect();
+  if(!ids.length){ state.view = {x:cv.width/2, y:cv.height/2, k:1}; return; }
+  let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+  ids.forEach(id => { const p = state.pos[id]||{x:0,y:0}, r = R(id)+16;
+    x0=Math.min(x0,p.x-r); y0=Math.min(y0,p.y-r); x1=Math.max(x1,p.x+r); y1=Math.max(y1,p.y+r); });
+  const pad = 46;
+  const k = Math.max(.35, Math.min(1.15, Math.min((cv.width-pad*2)/(x1-x0||1), (cv.height-pad*2)/(y1-y0||1))));
+  state.view = { k, x: cv.width/2 - ((x0+x1)/2)*k, y: cv.height/2 - ((y0+y1)/2)*k };
+}
+
+/* ============ render graph ============ */
+const scene = $("#scene");
+function edgeKey(e){ return e.inferred ? e.id : "c:"+e.id; }
+
+function render(){
+  derived = derive();
+  autoLayout();
+  const { inferred, badClaims, badNodes } = derived;
+  scene.setAttribute("transform", `translate(${state.view.x},${state.view.y}) scale(${state.view.k})`);
+  $("#zLbl").textContent = Math.round(state.view.k*100) + "%";
+  while(scene.firstChild) scene.removeChild(scene.firstChild);
+
+  const nodes = Object.keys(state.items);
+  $("#empty").style.display = nodes.length ? "none" : "grid";
+
+  const edges = state.claims.slice();
+  if(state.showInferred) edges.push(...inferred);
+
+  // highlight set
+  let hi = null;
+  if(sel && sel.type === "node"){ hi = new Set([sel.id]);
+    edges.forEach(e => { if(e.a===sel.id) hi.add(e.b); if(e.b===sel.id) hi.add(e.a); }); }
+
+  const gE = mk("g"), gN = mk("g");
+  scene.appendChild(gE); scene.appendChild(gN);
+
+  // how many edges share each unordered pair -> fan them out so none hide underneath
+  const lane = {}, laneN = {};
+  edges.forEach(e => { const k = [e.a,e.b].sort().join("|"); laneN[k] = (laneN[k]||0)+1; });
+
+  for(const e of edges){
+    const pa = state.pos[e.a], pb = state.pos[e.b];
+    if(!pa || !pb) continue;
+    const pk = [e.a,e.b].sort().join("|");
+    const idx = (lane[pk] = (lane[pk]||0)) , total = laneN[pk];
+    lane[pk]++;
+    const dx = pb.x-pa.x, dy = pb.y-pa.y, L = Math.hypot(dx,dy) || 1;
+    const ux = dx/L, uy = dy/L, nx = -uy, ny = ux;
+
+    // inferred links always bow out; stacked links fan apart
+    let bend = 0;
+    if(e.inferred) bend = Math.min(150, 46 + L*0.20);
+    else if(L > 175) bend = Math.min(110, 26 + L*0.13);   // skips a tier: bow around what's between
+    if(total > 1) bend += (idx - (total-1)/2) * 34;
+    if(e.inferred && bend > 0 && Math.abs(bend) < 30) bend = 30;
+
+    const mx = (pa.x+pb.x)/2 + nx*bend, my = (pa.y+pb.y)/2 + ny*bend;
+    // trim ends against the bubbles, aiming at the control point
+    const a1 = Math.hypot(mx-pa.x, my-pa.y) || 1, a2 = Math.hypot(pb.x-mx, pb.y-my) || 1;
+    const ra = R(e.a)+3, rb = R(e.b)+9;
+    const x1 = pa.x + (mx-pa.x)/a1*ra, y1 = pa.y + (my-pa.y)/a1*ra;
+    const x2 = pb.x - (pb.x-mx)/a2*rb, y2 = pb.y - (pb.y-my)/a2*rb;
+
+    const bad = !e.inferred && badClaims.has(e.id);
+    const cls = "edge" + (e.inferred?" inferred":"") + (bad?" conflict":"")
+      + (sel && sel.type==="edge" && sel.key===edgeKey(e) ? " sel":"")
+      + (hi && !(hi.has(e.a)&&hi.has(e.b)) ? " dim":"");
+    const d = bend ? `M${x1},${y1} Q${mx},${my} ${x2},${y2}` : `M${x1},${y1} L${x2},${y2}`;
+    const p = mk("path",{ d, class:cls, "marker-end":`url(#${bad?"ac":e.inferred?"ai":"ar"})` });
+    if(e.rel === "eq") p.removeAttribute("marker-end");
+    gE.appendChild(p);
+    const hit = mk("path",{ d, class:"hit" });
+    hit.addEventListener("click", ev => { ev.stopPropagation(); sel = {type:"edge", key:edgeKey(e)}; tab="detail"; syncTabs(); render(); });
+    gE.appendChild(hit);
+    if(state.view.k > .5){
+      const lx = .25*x1 + .5*mx + .25*x2, ly = .25*y1 + .5*my + .25*y2;
+      const t = mk("text",{ x:lx, y:ly - 5, class:"elab"+(e.inferred?" inferred":"") });
+      t.textContent = REL[e.rel].sym; gE.appendChild(t);
+    }
+  }
+
+  for(const id of nodes){
+    const p = state.pos[id]; if(!p) continue;
+    const g = mk("g",{ class:"node"
+      + (sel && sel.type==="node" && sel.id===id ? " sel":"")
+      + (badNodes.has(id) ? " bad":"")
+      + (hi && !hi.has(id) ? " dim":""),
+      transform:`translate(${p.x},${p.y})` });
+    g.appendChild(mk("circle",{ r:R(id) }));
+    const t = mk("text"); t.textContent = short(state.items[id].label); g.appendChild(t);
+    const ttl = mk("title"); ttl.textContent = state.items[id].label; g.appendChild(ttl);
+    nodeDrag(g, id);
+    gN.appendChild(g);
+  }
+
+  // conflict banner
+  const n = derived.conflicts.length;
+  $("#alert").classList.toggle("show", n > 0);
+  $("#alertText").textContent = n === 1 ? "1 contradiction in your trace" : n + " contradictions in your trace";
+  $("#issuePill").style.display = n ? "inline" : "none";
+  $("#issuePill").textContent = n;
+  renderPane();
+}
+
+/* ============ side panel ============ */
+function chip(id){ return `<span class="chip">${esc(state.items[id] ? state.items[id].label : id)}</span>`; }
+function esc(s){ return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function claimLine(a,rel,b){ return `<div class="claimline">${chip(a)}<span class="op">${REL[rel].sym}</span>${chip(b)}</div>`; }
+
+function renderPane(){
+  const pane = $("#pane");
+  if(tab === "order")  return void (pane.innerHTML = orderHTML(), bindRows(pane));
+  if(tab === "issues") return void (pane.innerHTML = issuesHTML(), bindRows(pane));
+  pane.innerHTML = detailHTML(); bindRows(pane); bindDetail(pane);
+}
+
+function detailHTML(){
+  if(!sel) return `<h3>Details</h3><div class="none">Click a bubble or a line.<br><br>
+    Solid lines are what you wrote. Dashed lines are conclusions the app worked out — click one to see the chain behind it.</div>`;
+
+  if(sel.type === "node"){
+    const id = sel.id; const it = state.items[id];
+    if(!it){ sel = null; return detailHTML(); }
+    const out = state.claims.filter(c => c.a === id), inn = state.claims.filter(c => c.b === id);
+    const inf = derived.inferred.filter(e => e.a === id || e.b === id);
+    let h = `<h3>Item</h3><div class="claimline"><span class="chip" style="font-size:15px;padding:4px 12px">${esc(it.label)}</span></div>`;
+    if(derived.badNodes.has(id)) h += `<div class="tagline bad">part of a contradiction</div>`;
+    h += `<div class="sep"></div><h3>Stated (${out.length+inn.length})</h3>`;
+    if(!out.length && !inn.length) h += `<div class="none">No claims yet.</div>`;
+    [...out, ...inn].forEach(c => {
+      h += `<div class="rowitem" data-edge="c:${c.id}">
+        <span class="nm">${esc(state.items[c.a].label)} <span class="op">${REL[c.rel].sym}</span> ${esc(state.items[c.b].label)}</span>
+        ${c.reason ? `<span class="ct">✎</span>` : ``}</div>`;
+    });
+    if(inf.length){
+      h += `<div class="sep"></div><h3>Worked out (${inf.length})</h3>`;
+      inf.forEach(e => { h += `<div class="rowitem" data-edge="${e.id}">
+        <span class="nm" style="color:var(--muted)">${esc(state.items[e.a].label)} <span class="op">${REL[e.rel].sym}</span> ${esc(state.items[e.b].label)}</span>
+        <span class="ct">${e.chain.length} steps</span></div>`; });
+    }
+    h += `<div class="act"><button data-rename="${id}">Rename</button><button class="danger" data-delnode="${id}">Delete item</button></div>`;
+    return h;
+  }
+
+  // edge
+  const key = sel.key;
+  if(key.startsWith("c:")){
+    const c = state.claims.find(x => "c:"+x.id === key);
+    if(!c){ sel = null; return detailHTML(); }
+    const bad = derived.badClaims.has(c.id);
+    let h = `<h3>Claim</h3>` + claimLine(c.a, c.rel, c.b);
+    h += `<div class="tagline${bad?" bad":""}">${bad ? "conflicts with another claim" : "you wrote this"}</div>`;
+    h += `<h3>Why</h3><textarea class="rtext" id="reasonEdit" placeholder="Why is that true?">${esc(c.reason)}</textarea>`;
+    h += `<div class="act"><button id="saveReason">Save note</button><button class="danger" data-delclaim="${c.id}">Delete claim</button></div>`;
+    const leads = derived.inferred.filter(e => e.chain.some(s => s.id === c.id));
+    if(leads.length){
+      h += `<div class="sep"></div><h3>This claim supports (${leads.length})</h3>`;
+      leads.slice(0,12).forEach(e => { h += `<div class="rowitem" data-edge="${e.id}">
+        <span class="nm" style="color:var(--muted)">${esc(state.items[e.a].label)} <span class="op">${REL[e.rel].sym}</span> ${esc(state.items[e.b].label)}</span></div>`; });
+    }
+    return h;
+  }
+
+  const e = derived.inferred.find(x => x.id === key);
+  if(!e){ sel = null; return detailHTML(); }
+  let h = `<h3>Worked out</h3>` + claimLine(e.a, e.rel, e.b);
+  h += `<div class="tagline inf">you never wrote this — it follows from ${e.chain.length} claims</div>`;
+  h += `<h3>The chain</h3><div style="margin-top:8px">`;
+  e.chain.forEach(s => {
+    h += `<div class="step" data-edge="c:${s.id}" style="cursor:pointer">
+      <div class="s1">${esc(state.items[s.a].label)} <span class="op">${REL[s.rel].sym}</span> ${esc(state.items[s.b].label)}</div>
+      <div class="s2${s.reason?"":" blank"}">${s.reason ? esc(s.reason) : "no reason written"}</div></div>`;
+  });
+  h += `<div class="step"><div class="s1" style="color:var(--infer)">${esc(state.items[e.a].label)} <span class="op">${REL[e.rel].sym}</span> ${esc(state.items[e.b].label)}</div>
+    <div class="s2">therefore</div></div></div>`;
+  return h;
+}
+
+function orderHTML(){
+  const ids = Object.keys(state.items);
+  if(!ids.length) return `<h3>Order</h3><div class="none">Nothing to rank yet.</div>`;
+  const rank = derived.rank;
+  const tiers = {}; ids.forEach(id => (tiers[rank[id]] = tiers[rank[id]] || []).push(id));
+  const lv = Object.keys(tiers).map(Number).sort((a,b)=>a-b);
+  let h = `<h3>Order</h3><div class="mini" style="margin-bottom:12px">Top = nothing beats it.</div>`;
+  lv.forEach((l,i) => {
+    h += `<div class="tier">tier ${i+1}</div>`;
+    tiers[l].sort((a,b)=> state.items[a].label.localeCompare(state.items[b].label)).forEach(id => {
+      const deg = state.claims.filter(c => c.a===id || c.b===id).length;
+      h += `<div class="rowitem${derived.badNodes.has(id)?" bad":""}" data-node="${id}">
+        <span class="rk">${i+1}</span><span class="nm">${esc(state.items[id].label)}</span>
+        <span class="ct">${deg}</span></div>`;
+    });
+  });
+  return h;
+}
+
+function issuesHTML(){
+  const cs = derived.conflicts;
+  if(!cs.length) return `<h3>Issues</h3><div class="none">No contradictions. Every chain runs one way.</div>`;
+  let h = `<h3>Contradictions (${cs.length})</h3>`;
+  if(derived.suppressed) h += `<div class="mini" style="margin:-4px 0 12px">${derived.suppressed} worked-out link${derived.suppressed>1?"s are":" is"} hidden — the chain runs through the contradiction below, so it proves nothing until you resolve it.</div>`;
+  cs.forEach(c => {
+    if(c.kind === "cycle"){
+      const names = c.loop.map(s => esc(state.items[s.a].label));
+      h += `<div class="conf" data-edge="c:${c.loop[0].id}">
+        <div class="ch">circular — this can't all be true</div>
+        <div class="cb">${names.join(` <span class="op">${REL[c.rel].sym}</span> `)} <span class="op">${REL[c.rel].sym}</span> ${esc(state.items[c.loop[0].a].label)}</div>
+        <div class="mini">${c.loop.length} claims form a loop. Click to open the first one.</div></div>`;
+    } else {
+      h += `<div class="conf" data-edge="c:${c.loop[0].id}">
+        <div class="ch">equal and unequal</div>
+        <div class="cb">${esc(state.items[c.a].label)} <span class="op">=</span> ${esc(state.items[c.b].label)}, but one also outranks the other.</div></div>`;
+    }
+  });
+  return h;
+}
+
+function bindRows(root){
+  root.querySelectorAll("[data-edge]").forEach(el => el.addEventListener("click", () => {
+    sel = { type:"edge", key: el.getAttribute("data-edge") }; tab = "detail"; syncTabs(); render(); }));
+  root.querySelectorAll("[data-node]").forEach(el => el.addEventListener("click", () => {
+    sel = { type:"node", id: el.getAttribute("data-node") }; tab = "detail"; syncTabs(); render(); }));
+}
+function bindDetail(root){
+  const sr = root.querySelector("#saveReason");
+  if(sr) sr.addEventListener("click", () => {
+    const c = state.claims.find(x => "c:"+x.id === sel.key);
+    if(c){ c.reason = root.querySelector("#reasonEdit").value.trim(); save(); render(); }
+  });
+  root.querySelectorAll("[data-delclaim]").forEach(b => b.addEventListener("click", () => {
+    removeClaim(b.getAttribute("data-delclaim")); sel = null; save(); render(); }));
+  root.querySelectorAll("[data-delnode]").forEach(b => b.addEventListener("click", () => {
+    const id = b.getAttribute("data-delnode");
+    state.claims = state.claims.filter(c => c.a !== id && c.b !== id);
+    delete state.items[id]; delete state.pos[id]; sel = null; save(); render(); }));
+  root.querySelectorAll("[data-rename]").forEach(b => b.addEventListener("click", () => {
+    const id = b.getAttribute("data-rename");
+    const box = document.createElement("div");
+    box.className = "act";
+    box.innerHTML = `<input class="tin" id="rn" value="${esc(state.items[id].label)}" style="flex:1;max-width:none"><button id="rnok">OK</button>`;
+    b.parentElement.replaceWith(box);
+    const inp = box.querySelector("#rn"); inp.focus(); inp.select();
+    const go = () => { const v = inp.value.trim(); if(v){ state.items[id].label = v; save(); } render(); };
+    box.querySelector("#rnok").addEventListener("click", go);
+    inp.addEventListener("keydown", ev => { if(ev.key === "Enter") go(); });
+  }));
+}
+function syncTabs(){ document.querySelectorAll(".tab").forEach(t => t.classList.toggle("on", t.dataset.tab === tab)); }
+
+/* ============ confirm tray ============ */
+function readEntry(){
+  const lines = $("#entry").value.split(/\n+/).map(s => s.trim()).filter(Boolean);
+  if(!lines.length) return;
+  pending = lines.map(parseLine).filter(Boolean);
+  drawTray();
+}
+function drawTray(){
+  const rows = $("#trayRows"); rows.innerHTML = "";
+  if(!pending.length){ $("#tray").classList.remove("show"); return; }
+  $("#tray").classList.add("show");
+  const ok = pending.filter(p => p.a && p.b).length;
+  $("#trayTitle").textContent = pending.length === 1 ? "I read this as" : `I read ${pending.length} lines as`;
+  $("#trayNote").textContent = ok < pending.length ? "fill the blanks to save" : "";
+  pending.forEach((p,i) => {
+    const r = document.createElement("div");
+    r.className = "prow" + (p.a && p.b ? "" : " bad");
+    r.innerHTML = `
+      <input class="tin" data-f="a" value="${esc(p.a)}" placeholder="item">
+      <select class="tsel" data-f="rel">${Object.keys(REL).map(k =>
+        `<option value="${k}"${k===p.rel?" selected":""}>${REL[k].sym}  ${REL[k].label}</option>`).join("")}</select>
+      <input class="tin" data-f="b" value="${esc(p.b)}" placeholder="item">
+      <input class="tin reason" data-f="reason" value="${esc(p.reason)}" placeholder="because…">
+      <button class="x" data-rm="${i}" title="drop">×</button>
+      ${p.a && p.b ? "" : `<div class="warn">couldn't tell what's being compared — “${esc(p.raw)}”</div>`}`;
+    r.querySelectorAll("[data-f]").forEach(el => el.addEventListener("input", () => {
+      p[el.dataset.f] = el.value; if(el.dataset.f === "a" || el.dataset.f === "b"){ r.classList.toggle("bad", !(p.a.trim() && p.b.trim())); } }));
+    r.querySelector("[data-rel]") ;
+    r.querySelector('[data-f="rel"]').addEventListener("change", e => { p.rel = e.target.value; });
+    r.querySelector("[data-rm]").addEventListener("click", () => { pending.splice(i,1); drawTray(); });
+    rows.appendChild(r);
+  });
+}
+function commit(){
+  const good = pending.filter(p => p.a && p.a.trim() && p.b && p.b.trim());
+  if(!good.length) return;
+  let last = null;
+  good.forEach(p => { const c = addClaim(p.a.trim(), p.b.trim(), p.rel, cleanReason(p.reason)); if(c) last = c; });
+  pending = []; drawTray();
+  $("#entry").value = ""; sizeEntry();
+  if(last) sel = { type:"edge", key:"c:"+last.id };
+  tab = "detail"; syncTabs();
+  const fresh = Object.keys(state.items).some(id => !state.pos[id]);
+  save(); render();
+  if(fresh) { fit(); render(); }
+}
+
+/* ============ interactions ============ */
+function sizeEntry(){ const t = $("#entry"); t.style.height = "auto"; t.style.height = Math.min(120, t.scrollHeight) + "px"; }
+$("#entry").addEventListener("input", sizeEntry);
+$("#entry").addEventListener("keydown", e => {
+  if(e.key === "Enter" && (e.metaKey || e.ctrlKey)){ e.preventDefault(); if(!pending.length) readEntry(); commit(); return; }
+  if(e.key === "Enter" && !e.shiftKey){ e.preventDefault(); readEntry(); }
+  if(e.key === "Escape"){ pending = []; drawTray(); }
+});
+$("#commit").addEventListener("click", commit);
+$("#cancel").addEventListener("click", () => { pending = []; drawTray(); });
+
+document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => { tab = t.dataset.tab; syncTabs(); renderPane(); }));
+$("#alert").addEventListener("click", () => { tab = "issues"; syncTabs(); renderPane(); });
+
+$("#tInfer").addEventListener("click", e => { state.showInferred = !state.showInferred;
+  e.currentTarget.classList.toggle("on", state.showInferred); save(); render(); });
+$("#tRelayout").addEventListener("click", () => { state.pos = {}; render(); fit(); render(); });
+let armed = 0;
+$("#tClear").addEventListener("click", e => {
+  const b = e.currentTarget;
+  if(!armed){ armed = 1; b.textContent = "Sure?"; b.classList.add("on");
+    setTimeout(() => { armed = 0; b.textContent = "Clear"; b.classList.remove("on"); }, 3500); return; }
+  armed = 0; b.textContent = "Clear"; b.classList.remove("on");
+  state.items = {}; state.claims = []; state.pos = {}; sel = null; tab = "detail"; syncTabs();
+  save(); render(); fit(); render();
+});
+$("#tPanel").addEventListener("click", e => { state.panel = !state.panel;
+  $("#main").classList.toggle("nopanel", !state.panel); e.currentTarget.classList.toggle("on", !state.panel); save(); });
+$("#tExport").addEventListener("click", () => {
+  const blob = new Blob([JSON.stringify({items:state.items,claims:state.claims,pos:state.pos}, null, 2)], {type:"application/json"});
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+  a.download = "trace-notes.json"; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
+});
+$("#tImport").addEventListener("click", () => $("#fileIn").click());
+$("#fileIn").addEventListener("change", ev => {
+  const f = ev.target.files[0]; if(!f) return;
+  const rd = new FileReader();
+  rd.onload = () => { try { const d = JSON.parse(rd.result);
+      if(d.items && d.claims){ state.items = d.items; state.claims = d.claims; state.pos = d.pos || {}; sel = null; save(); render(); fit(); render(); } }
+    catch(e){} };
+  rd.readAsText(f); ev.target.value = "";
+});
+
+/* zoom + pan */
+const cv = $("#canvas");
+$("#zIn").addEventListener("click", () => zoomBy(1.25));
+$("#zOut").addEventListener("click", () => zoomBy(1/1.25));
+$("#zFit").addEventListener("click", () => { fit(); render(); });
+function zoomBy(f){
+  const r = cv.getBoundingClientRect(), cx = r.width/2, cy = r.height/2;
+  const k2 = Math.max(.25, Math.min(2.5, state.view.k*f));
+  state.view.x = cx - (cx - state.view.x) * (k2/state.view.k);
+  state.view.y = cy - (cy - state.view.y) * (k2/state.view.k);
+  state.view.k = k2; render();
+}
+cv.addEventListener("wheel", e => {
+  e.preventDefault();
+  const r = cv.getBoundingClientRect(), mx = e.clientX-r.left, my = e.clientY-r.top;
+  if(e.ctrlKey || e.metaKey || Math.abs(e.deltaY) > 40 && !e.shiftKey){
+    const f = Math.exp(-e.deltaY * 0.0016);
+    const k2 = Math.max(.25, Math.min(2.5, state.view.k*f));
+    state.view.x = mx - (mx - state.view.x) * (k2/state.view.k);
+    state.view.y = my - (my - state.view.y) * (k2/state.view.k);
+    state.view.k = k2;
+  } else { state.view.x -= e.deltaX; state.view.y -= e.deltaY; }
+  render();
+}, {passive:false});
+
+let panning = null;
+cv.addEventListener("pointerdown", e => {
+  if(e.target.closest(".node") || e.target.closest("#zoom") || e.target.closest("#alert")) return;
+  panning = { x:e.clientX, y:e.clientY, vx:state.view.x, vy:state.view.y, moved:false };
+  cv.classList.add("dragging"); cv.setPointerCapture(e.pointerId);
+});
+cv.addEventListener("pointermove", e => {
+  if(!panning) return;
+  const dx = e.clientX-panning.x, dy = e.clientY-panning.y;
+  if(Math.abs(dx)+Math.abs(dy) > 3) panning.moved = true;
+  state.view.x = panning.vx + dx; state.view.y = panning.vy + dy; render();
+});
+cv.addEventListener("pointerup", e => {
+  if(panning && !panning.moved && !e.target.closest(".hit")){ sel = null; tab = "detail"; syncTabs(); render(); }
+  panning = null; cv.classList.remove("dragging");
+});
+
+function nodeDrag(g, id){
+  let d = null;
+  g.addEventListener("pointerdown", e => {
+    e.stopPropagation();
+    d = { x:e.clientX, y:e.clientY, px:state.pos[id].x, py:state.pos[id].y, moved:false };
+    g.setPointerCapture(e.pointerId);
+  });
+  g.addEventListener("pointermove", e => {
+    if(!d) return;
+    const dx = (e.clientX-d.x)/state.view.k, dy = (e.clientY-d.y)/state.view.k;
+    if(Math.abs(dx)+Math.abs(dy) > 2) d.moved = true;
+    state.pos[id] = { x:d.px+dx, y:d.py+dy }; render();
+  });
+  g.addEventListener("pointerup", e => {
+    if(d && !d.moved){ sel = { type:"node", id }; tab = "detail"; syncTabs(); }
+    if(d && d.moved) save();
+    d = null; render();
+  });
+}
+
+window.addEventListener("resize", () => render());
+document.addEventListener("keydown", e => {
+  if(e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT") return;
+  if(e.key === "/" ){ e.preventDefault(); $("#entry").focus(); }
+  if(e.key === "Escape"){ sel = null; render(); }
+});
+
+/* ============ boot ============ */
+load();
+$("#main").classList.toggle("nopanel", !state.panel);
+$("#tPanel").classList.toggle("on", !state.panel);
+$("#tInfer").classList.toggle("on", state.showInferred);
+if(!Object.keys(state.items).length){
+  addClaim("C","B","gt","ships faster and pulls fewer deps");
+  addClaim("B","G","gt","docs are far better maintained");
+  save();
+}
+derived = derive(); autoLayout(); fit(); render(); sizeEntry();
+</script>
+</body>
+</html>

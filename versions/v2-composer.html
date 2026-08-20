@@ -1,0 +1,647 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Trace — question chains</title>
+<style>
+:root{
+  --bg:#faf9f7; --panel:#ffffff; --ink:#1b1a18; --muted:#77726c; --faint:#a8a29b;
+  --line:#e6e1da; --line2:#f1ede7;
+  --accent:#b4532a; --accent-soft:#f7eae3; --accent-dim:#e8cdbd;
+  --open:#c08a2e; --open-soft:#fbf1dd;
+  --link:#5d7f8f;
+  --bubble:#ffffff;
+  --shadow:0 1px 2px rgba(28,26,24,.06), 0 10px 26px rgba(28,26,24,.07);
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#131215; --panel:#1a191d; --ink:#eceae7; --muted:#9b958d; --faint:#6b655e;
+    --line:#2c2a30; --line2:#232127;
+    --accent:#e08355; --accent-soft:#2f2119; --accent-dim:#5c3d2c;
+    --open:#d8a94a; --open-soft:#2e2617;
+    --link:#7fa3b5;
+    --bubble:#201f25;
+    --shadow:0 1px 2px rgba(0,0,0,.45), 0 12px 32px rgba(0,0,0,.38);
+  }
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);overflow:hidden;
+  font:15px/1.5 ui-sans-serif,-apple-system,"SF Pro Text","Segoe UI",Inter,system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+input,textarea{font:inherit;color:inherit}
+
+#app{display:grid;grid-template-rows:auto 1fr;height:100%}
+header{display:flex;align-items:flex-start;gap:16px;padding:13px 16px 11px;
+  border-bottom:1px solid var(--line);background:var(--panel);z-index:5}
+.brand{display:flex;align-items:center;gap:9px;padding-top:6px;flex:0 0 auto}
+.brand .dots{position:relative;width:22px;height:22px}
+.brand .dots i{position:absolute;border-radius:50%;display:block;background:var(--accent)}
+.brand .dots i:nth-child(1){width:9px;height:9px;left:0;top:1px}
+.brand .dots i:nth-child(2){width:7px;height:7px;left:12px;top:7px;opacity:.6}
+.brand .dots i:nth-child(3){width:5px;height:5px;left:5px;top:15px;opacity:.32}
+.brand b{font-size:15px;font-weight:600;letter-spacing:-.01em}
+.brand span{font-size:11.5px;color:var(--faint)}
+
+.composer{flex:1 1 auto;min-width:0;max-width:720px}
+.inputwrap{display:flex;align-items:flex-start;gap:9px;background:var(--bg);
+  border:1px solid var(--line);border-radius:12px;padding:8px 10px 8px 12px;
+  transition:border-color .15s,box-shadow .15s}
+.inputwrap:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.inputwrap.answer{border-color:var(--accent-dim)}
+.mode{flex:0 0 auto;font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;font-weight:600;
+  padding:5px 8px;border-radius:6px;background:var(--accent-soft);color:var(--accent);margin-top:1px}
+.mode.a{background:var(--line2);color:var(--muted)}
+#entry{flex:1;border:0;outline:0;background:none;resize:none;line-height:1.5;max-height:132px;padding:3px 0}
+#entry::placeholder{color:var(--faint)}
+.kbd{font:11px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--faint);
+  border:1px solid var(--line);border-radius:5px;padding:2px 5px;background:var(--panel);white-space:nowrap;margin-top:3px}
+.ctx{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--faint);padding:6px 3px 0;min-height:20px}
+.ctx b{font-weight:500;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
+.ctx .go{color:var(--accent);cursor:pointer;border-bottom:1px solid transparent}
+.ctx .go:hover{border-bottom-color:var(--accent)}
+
+.tools{display:flex;align-items:center;gap:3px;padding-top:5px;flex:0 0 auto;flex-wrap:wrap;justify-content:flex-end}
+.tbtn{padding:6px 10px;border-radius:8px;font-size:12.5px;color:var(--muted);white-space:nowrap}
+.tbtn:hover{background:var(--line2);color:var(--ink)}
+.tbtn.on{background:var(--accent-soft);color:var(--accent)}
+
+main{display:grid;grid-template-columns:1fr 320px;min-height:0}
+main.nopanel{grid-template-columns:1fr 0}
+main.nopanel aside{display:none}
+#canvas{position:relative;overflow:hidden;cursor:grab;
+  background:radial-gradient(circle at 1px 1px,var(--line) 1px,transparent 0) 0 0/22px 22px}
+#canvas.dragging{cursor:grabbing}
+#canvas.connecting{cursor:crosshair}
+#svg{position:absolute;inset:0;width:100%;height:100%;touch-action:none}
+
+.node{cursor:pointer}
+.node .ring{fill:var(--bubble);stroke:var(--accent-dim);stroke-width:2;transition:all .12s}
+.node.open .ring{stroke:var(--open);stroke-dasharray:3.5 3.5;fill:var(--bg)}
+.node .num{fill:var(--muted);font-size:11.5px;font-weight:600;text-anchor:middle;dominant-baseline:central;
+  pointer-events:none;user-select:none}
+.node.open .num{fill:var(--open)}
+.node .cap{fill:var(--muted);font-size:11px;text-anchor:middle;pointer-events:none;user-select:none}
+.node:hover .ring{stroke:var(--accent)}
+.node.focus .ring{stroke:var(--accent);stroke-width:3;fill:var(--accent-soft)}
+.node.focus .num{fill:var(--accent)}
+.node.focus .cap{fill:var(--ink);font-weight:500}
+.node.trail .ring{stroke:var(--accent)}
+.node.dim{opacity:.3}
+
+.branch{fill:none;stroke:var(--accent-dim);stroke-width:1.8}
+.branch.trail{stroke:var(--accent);stroke-width:2.4}
+.branch.dim{opacity:.25}
+.xlink{fill:none;stroke:var(--link);stroke-width:1.5;stroke-dasharray:5 4;opacity:.9}
+.xlink.dim{opacity:.2}
+.hit{fill:none;stroke:transparent;stroke-width:16;cursor:pointer}
+
+.empty{position:absolute;inset:0;display:grid;place-content:center;text-align:center;gap:11px;
+  color:var(--faint);pointer-events:none;padding:24px}
+.empty h2{margin:0;font-size:17px;color:var(--muted);font-weight:600}
+.empty p{margin:0;font-size:13.5px;max-width:380px;line-height:1.65}
+
+#hud{position:absolute;left:14px;top:14px;display:none;align-items:center;gap:10px;z-index:3;
+  background:var(--panel);border:1px solid var(--link);color:var(--link);border-radius:10px;
+  padding:8px 12px;font-size:12.5px;box-shadow:var(--shadow)}
+#hud.show{display:flex}
+#hud button{font-size:12px;color:var(--muted)}
+#zoom{position:absolute;right:14px;bottom:14px;display:flex;gap:2px;background:var(--panel);
+  border:1px solid var(--line);border-radius:9px;padding:3px;box-shadow:var(--shadow);z-index:3}
+#zoom button{width:28px;height:26px;border-radius:6px;color:var(--muted);font-size:14px}
+#zoom button:hover{background:var(--line2);color:var(--ink)}
+#zoom .lbl{display:grid;place-content:center;font-size:11px;color:var(--faint);min-width:42px}
+
+aside{border-left:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;min-height:0}
+.tabs{display:flex;gap:2px;padding:8px 10px 0;border-bottom:1px solid var(--line);flex:0 0 auto}
+.tab{padding:6px 9px 8px;font-size:12.5px;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px}
+.tab.on{color:var(--ink);font-weight:500;border-bottom-color:var(--accent)}
+.tab .pill{font-size:10px;background:var(--open);color:#241c07;border-radius:20px;padding:0 5px;margin-left:5px;vertical-align:1px;font-weight:600}
+.pane{padding:14px;overflow:auto;flex:1;min-height:0}
+.pane h3{margin:0 0 10px;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);font-weight:600}
+.pane .none{color:var(--faint);font-size:13.5px;line-height:1.7;padding:6px 0}
+
+.step{position:relative;padding:0 0 16px 20px;border-left:2px solid var(--line);margin-left:8px}
+.step:last-child{border-left-color:transparent;padding-bottom:4px}
+.step::before{content:attr(data-n);position:absolute;left:-11px;top:0;width:20px;height:20px;border-radius:50%;
+  background:var(--bg);border:2px solid var(--accent-dim);color:var(--muted);
+  font-size:10px;font-weight:600;display:grid;place-content:center;box-shadow:0 0 0 3px var(--panel)}
+.step.open::before{border-color:var(--open);border-style:dashed;color:var(--open)}
+.step.here::before{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+.step .q{font-size:13.5px;font-weight:500;line-height:1.5;cursor:pointer}
+.step .q:hover{color:var(--accent)}
+.step .a{font-size:13px;color:var(--muted);margin-top:5px;line-height:1.6;white-space:pre-wrap}
+.step .a.none{color:var(--open);font-style:italic}
+.step.here .q{color:var(--accent)}
+
+.qedit,.aedit{width:100%;border:1px solid var(--line);background:var(--bg);border-radius:9px;
+  padding:9px 11px;font-size:13.5px;line-height:1.55;resize:vertical;outline:0}
+.qedit:focus,.aedit:focus{border-color:var(--accent)}
+.aedit{min-height:78px}
+.act{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}
+.act button{font-size:12.5px;padding:5px 10px;border-radius:7px;border:1px solid var(--line);color:var(--muted)}
+.act button:hover{background:var(--line2);color:var(--ink)}
+.act button.go{background:var(--accent);color:#fff;border-color:transparent}
+.act button.go:hover{filter:brightness(1.07)}
+.act button.danger:hover{color:var(--conflict,#cf2f21);border-color:currentColor}
+.sep{height:1px;background:var(--line);margin:16px 0}
+
+.rowitem{display:flex;align-items:flex-start;gap:9px;padding:8px;border-radius:9px;cursor:pointer;margin:0 -8px}
+.rowitem:hover{background:var(--line2)}
+.rowitem .n{font:10px ui-monospace,Menlo,monospace;color:var(--faint);border:1.5px solid var(--line);
+  border-radius:50%;width:19px;height:19px;display:grid;place-content:center;flex:0 0 auto;margin-top:1px}
+.rowitem.open .n{border-color:var(--open);border-style:dashed;color:var(--open)}
+.rowitem .tx{font-size:13px;line-height:1.5;flex:1;min-width:0}
+.rowitem .sub{font-size:11.5px;color:var(--faint);margin-top:2px}
+.grp{margin:16px 0 8px;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);
+  display:flex;align-items:center;gap:8px}
+.grp::after{content:"";flex:1;height:1px;background:var(--line)}
+.grp:first-child{margin-top:0}
+.xl{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--link);padding:5px 0;cursor:pointer}
+.xl:hover{text-decoration:underline}
+.mini{font-size:11.5px;color:var(--faint);line-height:1.6}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="brand">
+      <div class="dots"><i></i><i></i><i></i></div>
+      <div><b>Trace</b><br><span>question chains</span></div>
+    </div>
+
+    <div class="composer">
+      <div class="inputwrap" id="wrap">
+        <span class="mode" id="mode">Question</span>
+        <textarea id="entry" rows="1" placeholder="What are you asking yourself?"></textarea>
+        <span class="kbd">⏎</span>
+      </div>
+      <div class="ctx" id="ctx"></div>
+    </div>
+
+    <div class="tools">
+      <button class="tbtn" id="tNew" title="Start an unconnected question">New thread</button>
+      <button class="tbtn" id="tConnect" title="Draw a link to another question">Connect</button>
+      <button class="tbtn" id="tTidy" title="Re-run layout">Tidy</button>
+      <button class="tbtn" id="tPanel">Panel</button>
+      <button class="tbtn" id="tExport">Export</button>
+      <button class="tbtn" id="tImport">Import</button>
+      <button class="tbtn" id="tClear">Clear</button>
+    </div>
+  </header>
+
+  <main id="main">
+    <div id="canvas">
+      <svg id="svg"><defs>
+        <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="var(--accent-dim)"/></marker>
+        <marker id="art" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker>
+      </defs><g id="scene"></g></svg>
+      <div class="empty" id="empty">
+        <h2>Start with a question</h2>
+        <p>Type it, hit <b>⏎</b>. Then type the answer, hit <b>⏎</b>.<br>
+           The next question you write hangs off that answer — and the dots start connecting themselves.</p>
+      </div>
+      <div id="hud"><span id="hudText"></span><button id="hudCancel">cancel</button></div>
+      <div id="zoom">
+        <button id="zOut">−</button><div class="lbl" id="zLbl">100%</div>
+        <button id="zIn">+</button><button id="zFit">⤢</button>
+      </div>
+    </div>
+
+    <aside>
+      <div class="tabs">
+        <button class="tab on" data-tab="trail">Trail</button>
+        <button class="tab" data-tab="all">All</button>
+        <button class="tab" data-tab="open">Open<span class="pill" id="openPill" style="display:none">0</span></button>
+      </div>
+      <div class="pane" id="pane"></div>
+    </aside>
+  </main>
+</div>
+<input type="file" id="fileIn" accept="application/json" style="display:none">
+
+<script>
+"use strict";
+const KEY = "tracenotes.q1";
+const $ = s => document.querySelector(s);
+const SVGNS = "http://www.w3.org/2000/svg";
+const mk = (n,a={}) => { const e = document.createElementNS(SVGNS,n); for(const k in a) e.setAttribute(k,a[k]); return e; };
+const uid = () => Math.random().toString(36).slice(2,9);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+/* ---------- state ----------
+   node: { id, q, a, parent }      parent = the question this one grew out of
+   link: { id, from, to, note }    a dot you connected by hand, across branches   */
+let state = { nodes:{}, order:[], links:[], pos:{}, view:{x:0,y:0,k:1}, panel:true, focus:null, mode:"q" };
+let tab = "trail", connecting = false;
+
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify({
+  nodes:state.nodes, order:state.order, links:state.links, pos:state.pos,
+  panel:state.panel, focus:state.focus, mode:state.mode })); }catch(e){} }
+function load(){ try{ const r = JSON.parse(localStorage.getItem(KEY)||"null");
+  if(r){ Object.assign(state, r); state.view = {x:0,y:0,k:1}; } }catch(e){} }
+
+const N   = id => state.nodes[id];
+const num = id => state.order.indexOf(id) + 1;
+const kids = id => state.order.filter(x => N(x).parent === id);
+function trailOf(id){ const t = []; let c = id, guard = 0;
+  while(c && N(c) && guard++ < 500){ t.unshift(c); c = N(c).parent; } return t; }
+
+/* ---------- capture: the whole app is this loop ---------- */
+function submit(){
+  const v = $("#entry").value.trim();
+  if(!v) return;
+  if(state.mode === "a" && state.focus && N(state.focus)){
+    N(state.focus).a = v;                       // answering the question you're on
+    state.mode = "q";
+  } else {
+    const n = { id:uid(), q:v, a:"", parent: state.focus || null, ts:Date.now() };
+    state.nodes[n.id] = n; state.order.push(n.id);
+    state.focus = n.id; state.mode = "a";       // next thing you type is its answer
+  }
+  $("#entry").value = ""; sizeEntry();
+  const fresh = state.order.some(id => !state.pos[id]);
+  save(); render();
+  if(fresh){ fit(); render(); }
+}
+/* skip the answer, ask straight on */
+function skipAnswer(){ if(state.mode === "a"){ state.mode = "q"; save(); render(); } }
+
+function focusOn(id){
+  state.focus = id;
+  state.mode = (id && N(id) && !N(id).a) ? "a" : "q";
+  tab = "trail"; syncTabs(); save(); render();
+}
+function newThread(){ state.focus = null; state.mode = "q"; save(); render(); $("#entry").focus(); }
+
+function deleteNode(id){
+  const orphan = kids(id);
+  orphan.forEach(k => N(k).parent = N(id).parent);   // children reattach to grandparent
+  delete state.nodes[id]; delete state.pos[id];
+  state.order = state.order.filter(x => x !== id);
+  state.links = state.links.filter(l => l.from !== id && l.to !== id);
+  if(state.focus === id) state.focus = N(orphan[0]) ? orphan[0] : null;
+  state.mode = "q"; save(); render();
+}
+
+/* ---------- layout: tidy tree, one column per thread ---------- */
+const RAD = 24, GX = 132, GY = 132;
+function autoLayout(){
+  const placed = {}; let leaf = 0;
+  const seen = new Set();
+  function place(id, depth){
+    if(seen.has(id)) return leaf*GX; seen.add(id);
+    const ch = kids(id);
+    let x;
+    if(!ch.length){ x = leaf*GX; leaf++; }
+    else { const xs = ch.map(c => place(c, depth+1)); x = (xs[0] + xs[xs.length-1])/2; }
+    placed[id] = { x, y: depth*GY };
+    return x;
+  }
+  state.order.filter(id => !N(id).parent || !N(N(id).parent)).forEach(r => { place(r,0); leaf += 0.7; });
+  state.order.forEach(id => { if(!seen.has(id)) place(id, 0); });
+  state.order.forEach(id => { if(!state.pos[id] && placed[id]) state.pos[id] = placed[id]; });
+}
+function fit(){
+  const cv = $("#canvas").getBoundingClientRect();
+  if(!state.order.length){ state.view = {x:cv.width/2, y:cv.height/2, k:1}; return; }
+  let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+  state.order.forEach(id => { const p = state.pos[id]; if(!p) return;
+    x0=Math.min(x0,p.x-RAD-40); x1=Math.max(x1,p.x+RAD+40);
+    y0=Math.min(y0,p.y-RAD-14); y1=Math.max(y1,p.y+RAD+42); });
+  const pad = 48;
+  const k = Math.max(.3, Math.min(1.1, Math.min((cv.width-pad*2)/(x1-x0||1),(cv.height-pad*2)/(y1-y0||1))));
+  state.view = { k, x: cv.width/2 - ((x0+x1)/2)*k, y: cv.height/2 - ((y0+y1)/2)*k };
+}
+
+/* ---------- caption wrapping ---------- */
+function wrapCap(t){
+  const words = String(t).replace(/\s+/g," ").trim().split(" ");
+  const lines = []; let cur = "";
+  for(const w of words){
+    if((cur+" "+w).trim().length > 17){ lines.push(cur.trim()); cur = w; if(lines.length === 2) break; }
+    else cur = (cur+" "+w).trim();
+  }
+  if(lines.length < 2 && cur) lines.push(cur);
+  if(lines.length === 2){
+    const used = lines.join(" ").length;
+    if(used < String(t).trim().length) lines[1] = lines[1].slice(0,15).trim() + "…";
+  }
+  return lines.slice(0,2);
+}
+
+/* ---------- render ---------- */
+const scene = $("#scene");
+function render(){
+  autoLayout();
+  scene.setAttribute("transform", `translate(${state.view.x},${state.view.y}) scale(${state.view.k})`);
+  $("#zLbl").textContent = Math.round(state.view.k*100)+"%";
+  while(scene.firstChild) scene.removeChild(scene.firstChild);
+  $("#empty").style.display = state.order.length ? "none" : "grid";
+
+  const trail = state.focus ? new Set(trailOf(state.focus)) : null;
+  const gL = mk("g"), gN = mk("g"); scene.appendChild(gL); scene.appendChild(gN);
+
+  // branch edges (parent -> child)
+  for(const id of state.order){
+    const n = N(id); if(!n.parent || !N(n.parent)) continue;
+    const pa = state.pos[n.parent], pb = state.pos[id]; if(!pa || !pb) continue;
+    const onTrail = trail && trail.has(id) && trail.has(n.parent);
+    const my = (pa.y+pb.y)/2;
+    const d = `M${pa.x},${pa.y+RAD+2} C${pa.x},${my} ${pb.x},${my} ${pb.x},${pb.y-RAD-7}`;
+    gL.appendChild(mk("path",{ d, class:"branch"+(onTrail?" trail":"")+(trail&&!onTrail?" dim":""),
+      "marker-end":`url(#${onTrail?"art":"ar"})` }));
+  }
+  // hand-drawn cross links
+  for(const l of state.links){
+    const pa = state.pos[l.from], pb = state.pos[l.to]; if(!pa || !pb) continue;
+    const dx = pb.x-pa.x, dy = pb.y-pa.y, L = Math.hypot(dx,dy)||1;
+    const mx = (pa.x+pb.x)/2 + (-dy/L)*Math.min(120, 30+L*.16);
+    const my = (pa.y+pb.y)/2 + ( dx/L)*Math.min(120, 30+L*.16);
+    const a1 = Math.hypot(mx-pa.x,my-pa.y)||1, a2 = Math.hypot(pb.x-mx,pb.y-my)||1;
+    const x1 = pa.x+(mx-pa.x)/a1*(RAD+2), y1 = pa.y+(my-pa.y)/a1*(RAD+2);
+    const x2 = pb.x-(pb.x-mx)/a2*(RAD+2), y2 = pb.y-(pb.y-my)/a2*(RAD+2);
+    const dim = trail && !(trail.has(l.from)||trail.has(l.to));
+    const d = `M${x1},${y1} Q${mx},${my} ${x2},${y2}`;
+    gL.appendChild(mk("path",{ d, class:"xlink"+(dim?" dim":"") }));
+    const hit = mk("path",{ d, class:"hit" });
+    hit.addEventListener("click", ev => { ev.stopPropagation();
+      if(confirmKill === l.id){ state.links = state.links.filter(x=>x.id!==l.id); confirmKill=null; save(); render(); }
+      else { confirmKill = l.id; hud(`Link · click it again to remove`); render(); } });
+    gL.appendChild(hit);
+  }
+
+  // bubbles
+  for(const id of state.order){
+    const p = state.pos[id]; if(!p) continue;
+    const n = N(id), open = !n.a;
+    const g = mk("g",{ class:"node" + (open?" open":"") + (state.focus===id?" focus":"")
+      + (trail && trail.has(id) && state.focus!==id ? " trail":"")
+      + (trail && !trail.has(id) ? " dim":""), transform:`translate(${p.x},${p.y})` });
+    g.appendChild(mk("circle",{ class:"ring", r:RAD }));
+    const t = mk("text",{ class:"num" }); t.textContent = num(id); g.appendChild(t);
+    wrapCap(n.q).forEach((ln,i) => {
+      const c = mk("text",{ class:"cap", y: RAD + 15 + i*13 }); c.textContent = ln; g.appendChild(c); });
+    const ttl = mk("title"); ttl.textContent = n.q + (n.a ? "\n\n→ " + n.a : "\n\n(unanswered)"); g.appendChild(ttl);
+    nodeDrag(g, id);
+    gN.appendChild(g);
+  }
+
+  // header context line
+  const c = $("#ctx");
+  $("#mode").textContent = state.mode === "a" ? "Answer" : "Question";
+  $("#mode").classList.toggle("a", state.mode === "a");
+  $("#wrap").classList.toggle("answer", state.mode === "a");
+  const f = state.focus && N(state.focus);
+  if(state.mode === "a" && f){
+    $("#entry").placeholder = "Your answer…";
+    c.innerHTML = `answering <b>${esc(f.q)}</b> <span class="go" id="ctxSkip">skip →</span>`;
+    $("#ctxSkip").addEventListener("click", skipAnswer);
+  } else if(f){
+    $("#entry").placeholder = "…so what does that make you ask next?";
+    c.innerHTML = `next question grows from <b>#${num(f.id)} ${esc(f.q)}</b> <span class="go" id="ctxRoot">start fresh thread</span>`;
+    $("#ctxRoot").addEventListener("click", newThread);
+  } else {
+    $("#entry").placeholder = "What are you asking yourself?";
+    c.innerHTML = state.order.length ? `new thread — this one starts on its own` : ``;
+  }
+
+  const openN = state.order.filter(id => !N(id).a).length;
+  $("#openPill").style.display = openN ? "inline" : "none";
+  $("#openPill").textContent = openN;
+  renderPane();
+}
+let confirmKill = null;
+
+/* ---------- panel ---------- */
+function renderPane(){
+  const pane = $("#pane");
+  pane.innerHTML = tab === "all" ? allHTML() : tab === "open" ? openHTML() : trailHTML();
+  pane.querySelectorAll("[data-go]").forEach(el => el.addEventListener("click", () => focusOn(el.dataset.go)));
+  if(tab === "trail") bindTrail(pane);
+}
+
+function trailHTML(){
+  if(!state.focus || !N(state.focus))
+    return `<h3>Trail</h3><div class="none">Pick a bubble to see the whole path of thinking that led to it — every question and every answer, in order.</div>`;
+  const t = trailOf(state.focus), f = N(state.focus);
+  let h = `<h3>How you got here · ${t.length} step${t.length>1?"s":""}</h3>`;
+  t.forEach(id => {
+    const n = N(id), here = id === state.focus;
+    h += `<div class="step${n.a?"":" open"}${here?" here":""}" data-n="${num(id)}">
+      <div class="q" data-go="${id}">${esc(n.q)}</div>
+      <div class="a${n.a?"":" none"}">${n.a ? esc(n.a) : "not answered yet"}</div></div>`;
+  });
+  h += `<div class="sep"></div><h3>This question</h3>
+    <textarea class="qedit" id="qEd" rows="2">${esc(f.q)}</textarea>
+    <div style="height:8px"></div>
+    <textarea class="aedit" id="aEd" placeholder="Answer…">${esc(f.a)}</textarea>
+    <div class="act">
+      <button class="go" id="edSave">Save</button>
+      <button id="edAsk">Ask a follow-up</button>
+      <button id="edConnect">Connect to…</button>
+      <button class="danger" id="edDel">Delete</button>
+    </div>`;
+  const ch = kids(state.focus);
+  if(ch.length){
+    h += `<div class="sep"></div><h3>Led you to ask (${ch.length})</h3>`;
+    ch.forEach(k => { h += `<div class="rowitem${N(k).a?"":" open"}" data-go="${k}">
+      <span class="n">${num(k)}</span><span class="tx">${esc(N(k).q)}</span></div>`; });
+  }
+  const xs = state.links.filter(l => l.from === state.focus || l.to === state.focus);
+  if(xs.length){
+    h += `<div class="sep"></div><h3>Connected dots (${xs.length})</h3>`;
+    xs.forEach(l => { const o = l.from === state.focus ? l.to : l.from;
+      if(N(o)) h += `<div class="xl" data-go="${o}">⤳ #${num(o)} ${esc(N(o).q)}</div>`; });
+  }
+  return h;
+}
+function bindTrail(root){
+  const q = root.querySelector("#qEd"), a = root.querySelector("#aEd");
+  const doSave = () => { const n = N(state.focus); if(!n) return;
+    if(q.value.trim()) n.q = q.value.trim(); n.a = a.value.trim();
+    state.mode = n.a ? "q" : "a"; save(); render(); };
+  root.querySelector("#edSave").addEventListener("click", doSave);
+  root.querySelector("#edAsk").addEventListener("click", () => { state.mode = "q"; save(); render(); $("#entry").focus(); });
+  root.querySelector("#edConnect").addEventListener("click", startConnect);
+  root.querySelector("#edDel").addEventListener("click", e => {
+    const b = e.currentTarget;
+    if(b.dataset.armed){ deleteNode(state.focus); return; }
+    b.dataset.armed = "1"; b.textContent = "Really delete?";
+  });
+}
+
+function allHTML(){
+  if(!state.order.length) return `<h3>All</h3><div class="none">Nothing yet.</div>`;
+  const roots = state.order.filter(id => !N(id).parent || !N(N(id).parent));
+  let h = "";
+  roots.forEach((r,i) => {
+    h += `<div class="grp">thread ${i+1}</div>`;
+    const walk = (id, depth) => {
+      const n = N(id);
+      h += `<div class="rowitem${n.a?"":" open"}" data-go="${id}" style="padding-left:${8+depth*14}px">
+        <span class="n">${num(id)}</span>
+        <span class="tx">${esc(n.q)}${n.a?`<div class="sub">${esc(n.a.slice(0,90))}${n.a.length>90?"…":""}</div>`:``}</span></div>`;
+      kids(id).forEach(k => walk(k, depth+1));
+    };
+    walk(r, 0);
+  });
+  return h;
+}
+function openHTML(){
+  const o = state.order.filter(id => !N(id).a);
+  if(!o.length) return `<h3>Open questions</h3><div class="none">Every question you've written has an answer. Ask a harder one.</div>`;
+  let h = `<h3>Open questions (${o.length})</h3><div class="mini" style="margin:-6px 0 12px">The loose ends — where the studying isn't done.</div>`;
+  o.forEach(id => { h += `<div class="rowitem open" data-go="${id}">
+    <span class="n">${num(id)}</span>
+    <span class="tx">${esc(N(id).q)}<div class="sub">${trailOf(id).length} step${trailOf(id).length>1?"s":""} in</div></span></div>`; });
+  return h;
+}
+function syncTabs(){ document.querySelectorAll(".tab").forEach(t => t.classList.toggle("on", t.dataset.tab === tab)); }
+
+/* ---------- connect mode ---------- */
+function hud(txt){ $("#hudText").textContent = txt; $("#hud").classList.add("show"); }
+function hudOff(){ $("#hud").classList.remove("show"); confirmKill = null; }
+function startConnect(){
+  if(!state.focus) return;
+  connecting = true; $("#canvas").classList.add("connecting");
+  hud(`Connecting from #${num(state.focus)} — click the question it connects to`);
+}
+function stopConnect(){ connecting = false; $("#canvas").classList.remove("connecting"); hudOff(); }
+$("#hudCancel").addEventListener("click", stopConnect);
+$("#tConnect").addEventListener("click", () => connecting ? stopConnect() : startConnect());
+
+/* ---------- input ---------- */
+function sizeEntry(){ const t = $("#entry"); t.style.height = "auto"; t.style.height = Math.min(132, t.scrollHeight)+"px"; }
+$("#entry").addEventListener("input", sizeEntry);
+$("#entry").addEventListener("keydown", e => {
+  if(e.key === "Enter" && !e.shiftKey){ e.preventDefault(); submit(); }
+  else if(e.key === "Tab" && state.mode === "a" && !$("#entry").value.trim()){ e.preventDefault(); skipAnswer(); }
+  else if(e.key === "Escape"){ $("#entry").blur(); }
+});
+
+document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => { tab = t.dataset.tab; syncTabs(); renderPane(); }));
+$("#tNew").addEventListener("click", newThread);
+$("#tTidy").addEventListener("click", () => { state.pos = {}; render(); fit(); render(); });
+$("#tPanel").addEventListener("click", e => { state.panel = !state.panel;
+  $("#main").classList.toggle("nopanel", !state.panel); e.currentTarget.classList.toggle("on", !state.panel); save(); render(); });
+$("#tExport").addEventListener("click", () => {
+  const blob = new Blob([JSON.stringify({nodes:state.nodes,order:state.order,links:state.links,pos:state.pos},null,2)],{type:"application/json"});
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+  a.download = "trace-questions.json"; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+});
+$("#tImport").addEventListener("click", () => $("#fileIn").click());
+$("#fileIn").addEventListener("change", ev => {
+  const f = ev.target.files[0]; if(!f) return;
+  const rd = new FileReader();
+  rd.onload = () => { try{ const d = JSON.parse(rd.result);
+    if(d.nodes && d.order){ state.nodes=d.nodes; state.order=d.order; state.links=d.links||[]; state.pos=d.pos||{};
+      state.focus=null; state.mode="q"; save(); render(); fit(); render(); } }catch(e){} };
+  rd.readAsText(f); ev.target.value = "";
+});
+let armed = 0;
+$("#tClear").addEventListener("click", e => {
+  const b = e.currentTarget;
+  if(!armed){ armed = 1; b.textContent = "Sure?"; b.classList.add("on");
+    setTimeout(()=>{ armed=0; b.textContent="Clear"; b.classList.remove("on"); }, 3500); return; }
+  armed = 0; b.textContent = "Clear"; b.classList.remove("on");
+  state.nodes={}; state.order=[]; state.links=[]; state.pos={}; state.focus=null; state.mode="q";
+  save(); render(); fit(); render();
+});
+
+/* ---------- canvas nav ---------- */
+const cv = $("#canvas");
+$("#zIn").addEventListener("click", ()=>zoomBy(1.25));
+$("#zOut").addEventListener("click", ()=>zoomBy(1/1.25));
+$("#zFit").addEventListener("click", ()=>{ fit(); render(); });
+function zoomBy(f){
+  const r = cv.getBoundingClientRect(), cx = r.width/2, cy = r.height/2;
+  const k2 = Math.max(.25, Math.min(2.2, state.view.k*f));
+  state.view.x = cx-(cx-state.view.x)*(k2/state.view.k);
+  state.view.y = cy-(cy-state.view.y)*(k2/state.view.k);
+  state.view.k = k2; render();
+}
+cv.addEventListener("wheel", e => {
+  e.preventDefault();
+  const r = cv.getBoundingClientRect(), mx = e.clientX-r.left, my = e.clientY-r.top;
+  if(e.ctrlKey || e.metaKey){
+    const k2 = Math.max(.25, Math.min(2.2, state.view.k*Math.exp(-e.deltaY*0.0022)));
+    state.view.x = mx-(mx-state.view.x)*(k2/state.view.k);
+    state.view.y = my-(my-state.view.y)*(k2/state.view.k);
+    state.view.k = k2;
+  } else { state.view.x -= e.deltaX; state.view.y -= e.deltaY; }
+  render();
+}, {passive:false});
+
+let pan = null;
+cv.addEventListener("pointerdown", e => {
+  if(e.target.closest(".node")||e.target.closest("#zoom")||e.target.closest("#hud")) return;
+  pan = { x:e.clientX, y:e.clientY, vx:state.view.x, vy:state.view.y, moved:false };
+  cv.classList.add("dragging"); cv.setPointerCapture(e.pointerId);
+});
+cv.addEventListener("pointermove", e => {
+  if(!pan) return;
+  const dx = e.clientX-pan.x, dy = e.clientY-pan.y;
+  if(Math.abs(dx)+Math.abs(dy) > 3) pan.moved = true;
+  state.view.x = pan.vx+dx; state.view.y = pan.vy+dy; render();
+});
+cv.addEventListener("pointerup", e => {
+  if(pan && !pan.moved && !e.target.closest(".hit")){ if(connecting) stopConnect(); else confirmKill = null; }
+  pan = null; cv.classList.remove("dragging");
+});
+
+function nodeDrag(g, id){
+  let d = null;
+  g.addEventListener("pointerdown", e => { e.stopPropagation();
+    d = { x:e.clientX, y:e.clientY, px:state.pos[id].x, py:state.pos[id].y, moved:false };
+    g.setPointerCapture(e.pointerId); });
+  g.addEventListener("pointermove", e => { if(!d) return;
+    const dx = (e.clientX-d.x)/state.view.k, dy = (e.clientY-d.y)/state.view.k;
+    if(Math.abs(dx)+Math.abs(dy) > 2) d.moved = true;
+    state.pos[id] = { x:d.px+dx, y:d.py+dy }; render(); });
+  g.addEventListener("pointerup", () => {
+    if(d && !d.moved){
+      if(connecting){
+        if(id !== state.focus && !state.links.some(l =>
+            (l.from===state.focus&&l.to===id)||(l.to===state.focus&&l.from===id))){
+          state.links.push({ id:uid(), from:state.focus, to:id, note:"" });
+        }
+        stopConnect(); save(); render();
+      } else focusOn(id);
+    }
+    if(d && d.moved) save();
+    d = null; render();
+  });
+}
+
+document.addEventListener("keydown", e => {
+  if(e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT") return;
+  if(e.key === "/"){ e.preventDefault(); $("#entry").focus(); }
+  if(e.key === "Escape"){ if(connecting) stopConnect(); }
+});
+window.addEventListener("resize", () => render());
+
+/* ---------- boot ---------- */
+load();
+$("#main").classList.toggle("nopanel", !state.panel);
+$("#tPanel").classList.toggle("on", !state.panel);
+if(!state.order.length){
+  const seed = [
+    ["Why does the heart need two separate pumps?", "One side pushes blood to the lungs, the other to the body — different pressures.", null],
+    ["Why do they need different pressures?", "Lungs are fragile and close by; the body is a long high-resistance circuit.", 0],
+    ["So which ventricle is thicker, and why?", "The left — it fights far more resistance, so its wall is much heavier muscle.", 1],
+    ["What happens if the left one can't keep up?", "", 2]
+  ];
+  const ids = [];
+  seed.forEach(([q,a,p]) => { const n = { id:uid(), q, a, parent: p===null?null:ids[p], ts:Date.now() };
+    state.nodes[n.id] = n; state.order.push(n.id); ids.push(n.id); });
+  state.focus = ids[3]; state.mode = "a"; save();
+}
+autoLayout(); fit(); render(); sizeEntry(); syncTabs();
+</script>
+</body>
+</html>
